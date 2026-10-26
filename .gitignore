@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Type checking and linting
+.mypy_cache/
+.pyright/
+.ruff_cache/
+
+# IDE and editor
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Local databases and generated data
+*.db
+*.sqlite3
+data/
+artifacts/
+reports/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Build and deployment overrides
+.env.local
+compose.override.yaml
+docker-compose.override.yml
