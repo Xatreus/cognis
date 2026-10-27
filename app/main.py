@@ -20,6 +20,7 @@ from app.agents.openrouter import OpenRouterAgent, OpenRouterConfigurationError
 from app.engine.evaluator import run_demo_evaluation, run_evaluation
 from app.engine.provider_scenarios import OPENROUTER_SMOKE_SCENARIO
 from app.engine.isolation import IsolatedWorkerError, IsolationPolicy, run_isolated_agent
+from app.engine.container_worker import ContainerPolicy, ContainerWorkerError, run_container_agent
 from app.engine.runner import AgentExecutionError
 from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.logging import configure_logging
@@ -85,6 +86,31 @@ class IsolatedEvaluationRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_case_ids(self):
+        ids = [case.case_id for case in self.cases]
+        if len(ids) != len(set(ids)):
+            raise ValueError("case_id values must be unique within a suite")
+        for case in self.cases:
+            if len(str(case.input)) > MAX_INPUT_CHARS:
+                raise ValueError(f"input for case {case.case_id!r} exceeds {MAX_INPUT_CHARS} characters")
+        return self
+
+
+class ContainerEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_id: Literal["demo", "openrouter"] = "demo"
+    suite: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_.-]+$")
+    cases: list[CaseRequest] = Field(min_length=1, max_length=MAX_CASES_PER_REQUEST)
+    include_traces: bool = True
+    timeout_seconds: float = Field(default=15, gt=0, le=min(MAX_TIMEOUT_SECONDS, 120))
+    memory_limit_mb: int = Field(default=512, ge=64, le=4096)
+    cpu_limit: float = Field(default=1.0, gt=0, le=4)
+    pids_limit: int = Field(default=64, ge=16, le=512)
+    network_enabled: bool = False
+
+    @model_validator(mode="after")
+    def validate_case_ids_and_inputs(self):
+        if self.network_enabled and self.agent_id != "openrouter":
+            raise ValueError("network_enabled is permitted only for the registered OpenRouter adapter")
         ids = [case.case_id for case in self.cases]
         if len(ids) != len(set(ids)):
             raise ValueError("case_id values must be unique within a suite")
@@ -241,6 +267,66 @@ async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
     except Exception as exc:
         logger.exception("Isolated evaluation failed")
         raise HTTPException(status_code=502, detail="Isolated evaluation failed") from exc
+
+
+@app.post(
+    "/evaluations/container",
+    response_model=EvaluationResponse,
+    tags=["evaluations"],
+    summary="Evaluate a registered agent in a disposable Docker container",
+    dependencies=[Depends(require_api_key)],
+)
+async def create_container_evaluation(request: ContainerEvaluationRequest):
+    """Run each case in a disposable, resource-limited Docker container.
+
+    Docker daemon access is highly privileged. Keep this API private and connect
+    it only to a dedicated worker daemon/host for production deployments.
+    """
+    from app.engine.evaluator import run_evaluation_async
+
+    scenario = EvaluationScenario(
+        name=request.suite,
+        description="Evaluation via a disposable Docker worker",
+        cases=tuple(EvaluationCase(
+            case_id=case.case_id,
+            input=case.input,
+            expected_output=case.expected_output,
+            contains=tuple(case.contains),
+            not_contains=tuple(case.not_contains),
+            max_latency_ms=case.max_latency_ms,
+            tags=tuple(case.tags),
+        ) for case in request.cases),
+    )
+
+    class ContainerRegisteredWorker:
+        def run(self, input_data):
+            try:
+                output, _worker_duration_ms = run_container_agent(
+                    request.agent_id,
+                    input_data,
+                    ContainerPolicy(
+                        timeout_seconds=request.timeout_seconds,
+                        memory_limit_mb=request.memory_limit_mb,
+                        cpu_limit=request.cpu_limit,
+                        pids_limit=request.pids_limit,
+                        network_enabled=request.network_enabled,
+                        image=os.getenv("COGNIS_CONTAINER_WORKER_IMAGE", "cognis-agent-worker:latest"),
+                    ),
+                )
+                return output
+            except ContainerWorkerError as exc:
+                raise AgentExecutionError(str(exc)) from exc
+
+    try:
+        return await run_evaluation_async(
+            ContainerRegisteredWorker(),
+            scenario,
+            include_traces=request.include_traces,
+            timeout_seconds=request.timeout_seconds + 10,
+        )
+    except Exception as exc:
+        logger.exception("Container evaluation failed")
+        raise HTTPException(status_code=502, detail="Container evaluation failed") from exc
 
 
 @app.post(

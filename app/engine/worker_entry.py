@@ -1,11 +1,15 @@
-"""Worker subprocess entry point. Only explicitly registered adapters can run here."""
+"""Worker entry point for registered adapters inside an isolated container."""
+import argparse
 import asyncio
 import inspect
+import json
 import sys
+from pathlib import Path
 from app.engine.worker_protocol import WorkerRequest, WorkerResponse
 
+
 def build_agent(agent_id: str):
-    # Explicit registry: never import a Python module/class named by a request.
+    # Never import a module/class supplied by a request.
     if agent_id == "demo":
         from app.agents.demo_agent import DemoAgent
         return DemoAgent()
@@ -14,9 +18,14 @@ def build_agent(agent_id: str):
         return OpenRouterAgent()
     raise ValueError("Unknown agent_id; only registered adapters can execute")
 
+
 def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--request-file", help="Read the JSON request from a transient file")
+    args = parser.parse_args()
     try:
-        request = WorkerRequest.model_validate_json(sys.stdin.read())
+        raw = Path(args.request_file).read_text(encoding="utf-8") if args.request_file else sys.stdin.read()
+        request = WorkerRequest.model_validate_json(raw)
         if request.protocol_version != 1:
             raise ValueError("Unsupported worker protocol version")
         agent = build_agent(request.agent_id)
@@ -31,6 +40,7 @@ def main() -> int:
     sys.stdout.write(response.model_dump_json())
     sys.stdout.flush()
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

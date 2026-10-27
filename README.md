@@ -92,9 +92,49 @@ This makes a real provider request and may incur charges. It asks the configured
 The API bounds cases per request, input length, and timeout using `COGNIS_MAX_CASES_PER_REQUEST`, `COGNIS_MAX_INPUT_CHARS`, and `COGNIS_MAX_TIMEOUT_SECONDS`. Calls can consume provider credits. The case inputs and expected outcomes are supplied by you; meaningful evaluation depends on well-designed test data and outcome oracles.
 
 
-### Registered subprocess worker (experimental)
+### Container-isolated worker (experimental)
 
-`POST /evaluations/isolated` runs each case in a fresh child process using an explicit agent allowlist. It currently supports only `demo` and `openrouter`; arbitrary module names and uploaded Python code are rejected.
+`POST /evaluations/container` runs each case in a disposable Docker container. The separate `Dockerfile.worker` image runs as UID 65532 with a read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, no host mounts, private IPC, an ephemeral `/tmp`, and bounded memory, CPU, PIDs, wall-clock time, and output. Network is disabled by default. Only the built-in `demo` and `openrouter` adapters are accepted; requests cannot select arbitrary imports or upload code.
+
+Build the worker image first:
+
+```powershell
+docker build -f Dockerfile.worker -t cognis-agent-worker:latest .
+```
+
+The API process needs access to a Docker Engine to create disposable workers. For local Linux development, configure Docker SDK access to a dedicated development daemon. The optional Compose service below mounts the host Docker socket; **the Docker socket is effectively host-root access**. Do not expose that API service publicly or use the same daemon that hosts sensitive workloads. For real production, use a separate worker host/daemon or a narrowly scoped remote worker service and protect its credentials.
+
+```powershell
+docker compose --profile docker-workers build cognis-worker-image cognis-api-with-docker-workers
+docker compose --profile docker-workers up cognis-api-with-docker-workers
+```
+
+The default API service does not mount the Docker socket. Docker Desktop on Windows may not support mounting a host socket the same way as Linux; use a reachable Docker Engine endpoint or run the worker backend on a dedicated Linux host. Do not expose an unauthenticated remote Docker TCP endpoint.
+
+Example request:
+
+```json
+{
+  "agent_id": "demo",
+  "suite": "container-refund-check",
+  "timeout_seconds": 15,
+  "memory_limit_mb": 512,
+  "cpu_limit": 1.0,
+  "pids_limit": 64,
+  "network_enabled": false,
+  "cases": [
+    {
+      "case_id": "cancelled-refund",
+      "input": "Order cancelled; customer requests refund",
+      "expected_output": "refund_eligible",
+      "tags": ["correctness"]
+    }
+  ]
+}
+```
+
+The Docker backend materially improves isolation, but **a container alone is not a complete security guarantee for arbitrary hostile code**. Use a dedicated host/daemon, patch the host kernel and Docker Engine, enforce host-level resource quotas, keep network disabled unless required, and use synthetic secrets only in security tests. OpenRouter workers need outbound network access, so setting `network_enabled: true` weakens network isolation and should be allowed only for trusted provider adapters. Worker containers receive only the OpenRouter environment variables needed by that adapter.
+
 
 ```json
 {
