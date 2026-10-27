@@ -1,7 +1,7 @@
 name: CI
 on:
   push:
-    branches: [main, cognis-production-build, cognis-eval-foundation, cognis-openrouter-integration, cognis-security-evaluation-pack]
+    branches: [main, cognis-production-hardening]
   pull_request:
     branches: [main]
 permissions:
