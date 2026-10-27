@@ -8,7 +8,7 @@ Cognis is an extensible agent evaluation and reliability-testing platform. This 
 - A minimal agent adapter contract for sync/async framework integrations.
 - A runner supporting callable agents and common `run`, `invoke`, `arun`, and `ainvoke` interfaces.
 - Deterministic output assertions, required/forbidden text checks, latency budgets, and a heuristic for obvious credential-like output.
-- A configurable secret non-disclosure scenario using caller-provided synthetic canaries.
+- Baseline security scenarios for synthetic-canary non-disclosure and a simple prompt-injection/instruction-override regression check.
 - Per-case results and aggregate pass-rate/latency metrics (mean, p50, p95, max).
 - Opt-in fault-injection helpers for trusted agents.
 - FastAPI health endpoints, Docker deployment foundation, and GitHub Actions CI.
@@ -77,7 +77,7 @@ This is an engineering foundation, **not yet a production-ready multi-tenant Saa
 
 ## Roadmap
 
-1. Expand correctness, robustness, and security scenario packs.
+1. Expand correctness, robustness, and security scenario packs with threat-model-specific cases and stronger outcome oracles.
 2. Add real agent/framework adapters and model-provider adapters (starting with OpenRouter).
 3. Add adversarial prompt and tool-use evaluation with trace capture and policy assertions.
 4. Implement isolated workers before running untrusted agents.
