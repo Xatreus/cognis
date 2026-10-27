@@ -189,6 +189,61 @@ async def create_custom_evaluation(request: CustomEvaluationRequest):
 
 
 @app.post(
+    "/evaluations/isolated",
+    response_model=EvaluationResponse,
+    tags=["evaluations"],
+    summary="Evaluate a registered agent in a child process",
+    dependencies=[Depends(require_api_key)],
+)
+async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
+    """Run only a built-in registered adapter in a fresh subprocess per case.
+
+    This is stronger fault containment than in-process invocation, but is not a
+    hostile-code sandbox: OS network/filesystem restrictions are not enforced.
+    """
+    from app.engine.evaluator import run_evaluation_async
+
+    scenario = EvaluationScenario(
+        name=request.suite,
+        description="Evaluation via a registered subprocess worker",
+        cases=tuple(EvaluationCase(
+            case_id=case.case_id,
+            input=case.input,
+            expected_output=case.expected_output,
+            contains=tuple(case.contains),
+            not_contains=tuple(case.not_contains),
+            max_latency_ms=case.max_latency_ms,
+            tags=tuple(case.tags),
+        ) for case in request.cases),
+    )
+
+    class RegisteredWorker:
+        def run(self, input_data):
+            try:
+                output, _worker_duration_ms = run_isolated_agent(
+                    request.agent_id,
+                    input_data,
+                    IsolationPolicy(
+                        timeout_seconds=request.timeout_seconds,
+                        memory_limit_mb=request.memory_limit_mb,
+                    ),
+                )
+                return output
+            except IsolatedWorkerError as exc:
+                raise AgentExecutionError(str(exc)) from exc
+
+    try:
+        return await run_evaluation_async(
+            RegisteredWorker(), scenario,
+            include_traces=request.include_traces,
+            timeout_seconds=request.timeout_seconds + 3,
+        )
+    except Exception as exc:
+        logger.exception("Isolated evaluation failed")
+        raise HTTPException(status_code=502, detail="Isolated evaluation failed") from exc
+
+
+@app.post(
     "/evaluations/openrouter",
     response_model=EvaluationResponse,
     tags=["evaluations"],
