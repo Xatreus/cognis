@@ -1,0 +1,11 @@
+# Separate image for agent execution; do not use the API image as a worker.
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
+WORKDIR /app
+COPY requirements.txt .
+RUN python -m pip install --no-cache-dir --upgrade pip \
+    && python -m pip install --no-cache-dir -r requirements.txt
+COPY app ./app
+RUN python -c "import os; os.chmod('/app', 0o555)"
+USER 65532:65532
+ENTRYPOINT ["python", "-m", "app.engine.worker_entry"]
