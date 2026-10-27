@@ -20,6 +20,7 @@ from app.agents.openrouter import OpenRouterAgent, OpenRouterConfigurationError
 from app.engine.evaluator import run_demo_evaluation, run_evaluation
 from app.engine.provider_scenarios import OPENROUTER_SMOKE_SCENARIO
 from app.engine.isolation import IsolatedWorkerError, IsolationPolicy, run_isolated_agent
+from app.engine.runner import AgentExecutionError
 from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.logging import configure_logging
 from app.schemas.evaluations import EvaluationRequest, EvaluationResponse
