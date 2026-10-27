@@ -1,4 +1,5 @@
-"""Evaluation orchestration for the deterministic demo target."""
+"""Generic scenario evaluator for trusted agent adapters."""
+import asyncio
 from uuid import uuid4
 
 from app.agents.demo_agent import DemoAgent
@@ -17,50 +18,38 @@ DEMO_SCENARIO = EvaluationScenario(
     name="demo",
     description="Basic deterministic refund-routing and input-validation checks.",
     cases=(
-        EvaluationCase(
-            case_id="cancelled_refund",
-            input="Order cancelled; customer requests refund",
-            expected_output="refund_eligible",
-            tags=("correctness", "refund"),
-        ),
-        EvaluationCase(
-            case_id="delivered_refund",
-            input="Order delivered; customer requests refund",
-            expected_output="review_required",
-            tags=("correctness", "refund"),
-        ),
-        EvaluationCase(
-            case_id="general_question",
-            input="Where can I find my invoice?",
-            expected_output="human_review",
-            tags=("correctness", "general"),
-        ),
-        EvaluationCase(
-            case_id="empty_input",
-            input="",
-            expected_output="error",
-            tags=("robustness", "input-validation"),
-        ),
+        EvaluationCase(case_id="cancelled_refund", input="Order cancelled; customer requests refund",
+                       expected_output="refund_eligible", tags=("correctness", "refund")),
+        EvaluationCase(case_id="delivered_refund", input="Order delivered; customer requests refund",
+                       expected_output="review_required", tags=("correctness", "refund")),
+        EvaluationCase(case_id="general_question", input="Where can I find my invoice?",
+                       expected_output="human_review", tags=("correctness", "general")),
+        EvaluationCase(case_id="empty_input", input="", expected_output="error",
+                       tags=("robustness", "input-validation")),
     ),
 )
 
 
-def run_evaluation(agent, scenario: EvaluationScenario, include_traces: bool = True) -> EvaluationResponse:
-    """Evaluate a callable or run/invoke-style agent against a scenario.
+async def run_evaluation_async(
+    agent,
+    scenario: EvaluationScenario,
+    include_traces: bool = True,
+    timeout_seconds: float = 30.0,
+) -> EvaluationResponse:
+    """Evaluate one trusted agent over a named scenario.
 
-    Agent code runs in-process and must be trusted. The runner timeout does not
-    sandbox untrusted code; see app.engine.isolation for the intended boundary.
+    Agent code executes in this process. The timeout bounds how long Cognis waits;
+    it is not a sandbox and cannot safely terminate arbitrary target code.
     """
-    case_results: list[CaseResult] = []
+    results: list[CaseResult] = []
     for case in scenario.cases:
         error = None
-        raw_output = None
-        duration_ms = 0.0
         try:
-            raw_output, duration_ms = _run_case(agent, case.input)
-            actual = normalize_output(raw_output)
+            raw, duration_ms = await run_agent(agent, case.input, timeout_seconds=timeout_seconds)
+            actual = normalize_output(raw)
         except (AgentExecutionError, ValueError) as exc:
             actual = "error"
+            duration_ms = timeout_seconds * 1000 if isinstance(exc, AgentExecutionError) and "timeout" in str(exc).lower() else 0.0
             error = str(exc)
 
         checks = evaluate_assertions(
@@ -69,62 +58,52 @@ def run_evaluation(agent, scenario: EvaluationScenario, include_traces: bool = T
             contains=case.contains,
             not_contains=case.not_contains,
             latency_ms=duration_ms,
+            max_latency_ms=case.max_latency_ms,
         )
-        passed = bool(checks) and all(check.passed for check in checks)
-        case_results.append(
-            CaseResult(
-                case_id=case.case_id,
-                passed=passed,
-                expected=normalize_output(case.expected_output),
-                actual=actual,
-                duration_ms=round(duration_ms, 3),
-                error=error if include_traces else None,
-                assertions=[
-                    AssertionResultSchema(
-                        name=check.name,
-                        passed=check.passed,
-                        message=check.message if include_traces else ("passed" if check.passed else "failed"),
-                    )
-                    for check in checks
-                ],
-                tags=list(case.tags),
-            )
-        )
+        passed = bool(checks) and all(item.passed for item in checks)
+        results.append(CaseResult(
+            case_id=case.case_id,
+            passed=passed,
+            expected=normalize_output(case.expected_output),
+            actual=actual,
+            duration_ms=round(duration_ms, 3),
+            error=error if include_traces else None,
+            assertions=[
+                AssertionResultSchema(
+                    name=item.name,
+                    passed=item.passed,
+                    message=item.message if include_traces else ("passed" if item.passed else "failed"),
+                )
+                for item in checks
+            ],
+            tags=list(case.tags),
+        ))
 
-    passed_count = sum(result.passed for result in case_results)
-    total = len(case_results)
-    metric_values = summarize_run(
-        (result.duration_ms for result in case_results), passed_count, total
-    )
-    metrics = EvaluationMetrics(**metric_values)
+    passed_count = sum(item.passed for item in results)
+    total = len(results)
+    metrics = EvaluationMetrics(**summarize_run((item.duration_ms for item in results), passed_count, total))
     return EvaluationResponse(
         evaluation_id=str(uuid4()),
         suite=scenario.name,
         status="passed" if passed_count == total else "failed",
         total=total,
         passed=passed_count,
-        failed=total - passed_count,
+        failed=total-passed_count,
         pass_rate=passed_count / total if total else 0.0,
-        results=case_results,
+        results=results,
         metrics=metrics,
     )
 
 
-def _run_case(agent, input_data):
-    """Keep demo's deliberate ValueError as a testable target error outcome."""
+def run_evaluation(agent, scenario: EvaluationScenario, include_traces: bool = True) -> EvaluationResponse:
+    """Synchronous entry point; use run_evaluation_async inside an event loop."""
     try:
-        import asyncio
-        return asyncio.run(run_agent(agent, input_data))
-    except ValueError:
-        raise
-    except RuntimeError as exc:
-        # asyncio.run cannot run inside an already-running loop. The HTTP endpoint
-        # is synchronous today; async callers should call run_agent directly.
-        if "asyncio.run() cannot be called" in str(exc):
-            raise AgentExecutionError("Use run_agent from an async context.") from exc
-        raise
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(run_evaluation_async(agent, scenario, include_traces))
+    raise RuntimeError("run_evaluation cannot run inside an event loop; await run_evaluation_async instead")
 
 
 def run_demo_evaluation(include_traces: bool = True) -> EvaluationResponse:
-    """Backward-compatible entry point used by the existing API."""
+    """Backward-compatible deterministic demo evaluation."""
     return run_evaluation(DemoAgent(), DEMO_SCENARIO, include_traces=include_traces)
