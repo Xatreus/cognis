@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument("--request-file", help="Read the JSON request from a transient file")
     args = parser.parse_args()
     try:
-        raw = Path(args.request_file).read_text(encoding="utf-8") if args.request_file else sys.stdin.read()
+        raw = Path(args.request_file).read_text(encoding="utf-8") if args.request_file else sys.stdin.readline()
         request = WorkerRequest.model_validate_json(raw)
         if request.protocol_version != 1:
             raise ValueError("Unsupported worker protocol version")
