@@ -91,6 +91,30 @@ This makes a real provider request and may incur charges. It asks the configured
 
 The API bounds cases per request, input length, and timeout using `COGNIS_MAX_CASES_PER_REQUEST`, `COGNIS_MAX_INPUT_CHARS`, and `COGNIS_MAX_TIMEOUT_SECONDS`. Calls can consume provider credits. The case inputs and expected outcomes are supplied by you; meaningful evaluation depends on well-designed test data and outcome oracles.
 
+
+### Registered subprocess worker (experimental)
+
+`POST /evaluations/isolated` runs each case in a fresh child process using an explicit agent allowlist. It currently supports only `demo` and `openrouter`; arbitrary module names and uploaded Python code are rejected.
+
+```json
+{
+  "agent_id": "demo",
+  "suite": "isolated-refund-check",
+  "timeout_seconds": 10,
+  "memory_limit_mb": 512,
+  "cases": [
+    {
+      "case_id": "cancelled-refund",
+      "input": "Order cancelled; customer requests refund",
+      "expected_output": "refund_eligible",
+      "tags": ["correctness"]
+    }
+  ]
+}
+```
+
+The worker uses a JSON request/response protocol, a bounded wall-clock timeout, a restricted inherited environment, output-size checks, and POSIX address-space/file-descriptor/core-dump limits where supported. These measures improve crash and timeout containment. **This subprocess backend does not enforce network isolation or filesystem read-only mode and is not a security sandbox for hostile code.** The `network_enabled` and `filesystem_read_only` policy fields are intent only here. Do not run untrusted agent code. A real multi-user production worker needs container/VM isolation with OS-enforced network policy, read-only mounts, non-root identity, seccomp/AppArmor, cgroup limits, ephemeral credentials, and cleanup.
+
 ## Use the engine from Python
 
 Trusted agents can be tested without going through the HTTP endpoint:
