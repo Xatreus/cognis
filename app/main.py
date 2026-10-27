@@ -1,9 +1,12 @@
 import logging
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+
+load_dotenv()
 
 from app.agents.openrouter import OpenRouterAgent, OpenRouterConfigurationError
 from app.observability.logging import configure_logging
