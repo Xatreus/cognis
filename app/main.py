@@ -109,6 +109,8 @@ class ContainerEvaluationRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_case_ids_and_inputs(self):
+        if self.network_enabled and self.agent_id != "openrouter":
+            raise ValueError("network_enabled is permitted only for the registered OpenRouter adapter")
         ids = [case.case_id for case in self.cases]
         if len(ids) != len(set(ids)):
             raise ValueError("case_id values must be unique within a suite")
