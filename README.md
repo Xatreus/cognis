@@ -40,6 +40,15 @@ Submit `POST /evaluations` with:
 {"suite":"demo","include_traces":true}
 ```
 
+### OpenRouter smoke evaluation
+
+1. Copy `.env.example` to `.env`.
+2. Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` to credentials/model identifiers valid for your OpenRouter account. Keep `.env` local; it is ignored by Git.
+3. Start the API with `python -m uvicorn app.main:app --reload`.
+4. Call `POST /evaluations/openrouter` with `{"include_traces":true}` using the interactive docs at `http://127.0.0.1:8000/docs`.
+
+This sends a real, potentially billable provider request. The smoke test checks whether the model returns the exact token `COGNIS_OK`; a failure can reflect model behavior or provider configuration, not necessarily a broken adapter. Use a low-cost model available to your account. No API key is needed for the deterministic tests or CI.
+
 Health endpoints are `/health/live` and `/health/ready`.
 
 ## Architecture
