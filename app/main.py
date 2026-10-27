@@ -7,7 +7,7 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -19,6 +19,7 @@ load_dotenv()
 from app.agents.openrouter import OpenRouterAgent, OpenRouterConfigurationError
 from app.engine.evaluator import run_demo_evaluation, run_evaluation
 from app.engine.provider_scenarios import OPENROUTER_SMOKE_SCENARIO
+from app.engine.isolation import IsolatedWorkerError, IsolationPolicy, run_isolated_agent
 from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.logging import configure_logging
 from app.schemas.evaluations import EvaluationRequest, EvaluationResponse
@@ -70,6 +71,26 @@ class CaseRequest(BaseModel):
     not_contains: list[str] = Field(default_factory=list, max_length=20)
     max_latency_ms: float | None = Field(default=None, gt=0)
     tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+class IsolatedEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_id: Literal["demo", "openrouter"] = "demo"
+    suite: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_.-]+$")
+    cases: list[CaseRequest] = Field(min_length=1, max_length=MAX_CASES_PER_REQUEST)
+    include_traces: bool = True
+    timeout_seconds: float = Field(default=10, gt=0, le=min(MAX_TIMEOUT_SECONDS, 60))
+    memory_limit_mb: int = Field(default=512, ge=64, le=2048)
+
+    @model_validator(mode="after")
+    def validate_case_ids(self):
+        ids = [case.case_id for case in self.cases]
+        if len(ids) != len(set(ids)):
+            raise ValueError("case_id values must be unique within a suite")
+        for case in self.cases:
+            if len(str(case.input)) > MAX_INPUT_CHARS:
+                raise ValueError(f"input for case {case.case_id!r} exceeds {MAX_INPUT_CHARS} characters")
+        return self
 
 
 class CustomEvaluationRequest(BaseModel):
