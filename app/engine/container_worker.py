@@ -8,10 +8,8 @@ keep its socket inaccessible to public clients.
 """
 from __future__ import annotations
 
-import io
 import logging
 import os
-import tarfile
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -48,17 +46,6 @@ class ContainerPolicy:
             raise ValueError("max_output_bytes must be at least 1024")
         if not self.image or len(self.image) > 255:
             raise ValueError("image must be a non-empty image reference")
-
-
-def _request_archive(payload: bytes) -> bytes:
-    """Create a tiny in-memory tar archive; no host paths are mounted."""
-    stream = io.BytesIO()
-    with tarfile.open(fileobj=stream, mode="w") as archive:
-        info = tarfile.TarInfo("cognis-request.json")
-        info.size = len(payload)
-        info.mode = 0o444
-        archive.addfile(info, io.BytesIO(payload))
-    return stream.getvalue()
 
 
 def _provider_environment(agent_id: str) -> dict[str, str]:
@@ -105,18 +92,13 @@ def run_container_agent(
                 f"Worker image '{policy.image}' is missing; build it with Dockerfile.worker first"
             ) from exc
 
-        # Container has no bind mounts. Request content is copied into ephemeral
-        # tmpfs, then removed with the container. Network is denied unless opted in.
-        # Docker's archive API requires the target container to be running.
-        # Start a tiny wait loop, copy the request into tmpfs, then exec worker.
-        worker_command = (
-            "while [ ! -f /tmp/cognis-request.json ]; do sleep 0.05; done; "
-            "exec python -m app.engine.worker_entry --request-file /tmp/cognis-request.json"
-        )
+        # No bind mounts or request files are needed: send the JSON over the
+        # container's stdin. This works with a read-only root filesystem because
+        # Docker's archive API rejects writes when the rootfs is read-only.
         container = client.containers.create(
             image=policy.image,
-            command=["/bin/sh", "-c", worker_command],
-            stdin_open=False,
+            command=["python", "-m", "app.engine.worker_entry"],
+            stdin_open=True,
             tty=False,
             detach=True,
             network_mode="bridge" if policy.network_enabled else "none",
@@ -134,10 +116,12 @@ def run_container_agent(
         )
         operation = "start container"
         container.start()
-        operation = "copy request archive"
-        copied = container.put_archive("/tmp", _request_archive(payload))
-        if copied is False:
-            raise ContainerWorkerError("Docker Engine rejected the worker request archive")
+        operation = "send request over worker stdin"
+        stdin_socket = container.attach_socket(params={"stdin": 1, "stream": 1})
+        try:
+            stdin_socket._sock.sendall(payload + b"\\n")
+        finally:
+            stdin_socket.close()
         operation = "wait for worker"
         result = container.wait(timeout=policy.timeout_seconds)
         status_code = result.get("StatusCode", 1)
