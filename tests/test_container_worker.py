@@ -28,7 +28,7 @@ def test_request_archive_contains_only_request_file():
         members = archive.getmembers()
         assert [item.name for item in members] == ["cognis-request.json"]
         assert archive.extractfile(members[0]).read() == payload
-        assert members[0].mode == 0o400
+        assert members[0].mode == 0o444
 
 
 def test_container_worker_rejects_unregistered_agent_before_docker():
