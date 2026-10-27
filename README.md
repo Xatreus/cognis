@@ -1,16 +1,17 @@
 # Cognis
 
-Cognis is an extensible agent evaluation and reliability-testing platform. The current milestone establishes a reusable Python evaluation core and keeps the FastAPI demo endpoint backwards compatible.
+Cognis is an extensible agent evaluation and reliability-testing platform. This repository contains a reusable Python evaluation core and a deterministic FastAPI demo endpoint.
 
 ## Current capabilities
 
-- FastAPI health endpoints and a typed demo evaluation API.
-- Provider-neutral test cases and named evaluation scenarios.
-- A runner that accepts callable agents and common `run`, `invoke`, `arun`, or `ainvoke` interfaces, normalizes common response shapes, and measures latency.
-- Deterministic assertions for expected output, required/forbidden text, latency budgets, and obvious credential-like output patterns.
-- Per-case pass/fail, assertion details, tags, and aggregate pass-rate/latency metrics (mean, p50, p95, max).
-- Opt-in fault-injection helpers for trusted test agents.
-- GitHub Actions CI and Docker deployment foundation.
+- Typed, provider-neutral evaluation cases and named scenarios.
+- A minimal agent adapter contract for sync/async framework integrations.
+- A runner supporting callable agents and common `run`, `invoke`, `arun`, and `ainvoke` interfaces.
+- Deterministic output assertions, required/forbidden text checks, latency budgets, and a heuristic for obvious credential-like output.
+- A configurable secret non-disclosure scenario using caller-provided synthetic canaries.
+- Per-case results and aggregate pass-rate/latency metrics (mean, p50, p95, max).
+- Opt-in fault-injection helpers for trusted agents.
+- FastAPI health endpoints, Docker deployment foundation, and GitHub Actions CI.
 
 ## Run locally
 
@@ -44,9 +45,6 @@ Health endpoints are `/health/live` and `/health/ready`.
 ## Architecture
 
 ```text
-Evaluation API / SDK
-        |
-        v
 Scenario + cases ---> Agent adapter/runner ---> Target agent
         |                     |                    |
         v                     v                    v
@@ -56,22 +54,22 @@ Assertions              Timing/errors         Agent output
           +---------- Results + metrics ----------+
 ```
 
-The core runner is reusable from Python, but the HTTP endpoint currently exposes only the deterministic `demo` suite. Real model-provider integrations and a general-purpose public agent-submission API are not implemented yet.
+The core runner is reusable from Python. The HTTP endpoint currently exposes only the deterministic `demo` suite; the adapter protocol is a foundation for integrations, not a set of completed vendor/framework adapters. Real model-provider integrations and a general-purpose public agent-submission API are not implemented yet.
 
 ## Security and isolation limitations
 
-The current secret-pattern check is a heuristic for obvious credential-like output, **not** a complete secret detector or security certification. Real agent security evaluation needs threat-model-specific scenarios, adversarial test corpora, tool-call and side-effect inspection, policy checks, and (where applicable) human or model-assisted judging.
+The secret non-disclosure scenario checks whether an output contains caller-supplied synthetic canaries. The output credential-pattern check is also heuristic. **Neither is a comprehensive security benchmark or certification.** Serious agent security evaluation needs threat-model-specific adversarial cases, tool-call and side-effect inspection, policy checks, robust trace handling, and (where appropriate) human or model-assisted judging.
 
 The runner executes target code in-process. Its timeout limits how long Cognis waits but does not safely terminate arbitrary Python code or sandbox a hostile agent. Do not run untrusted agents in this process. A future isolated worker should use process/container boundaries, resource limits, restricted network and filesystem access, and controlled credentials.
 
 ## Production readiness
 
-This is an engineering foundation, **not yet a production-ready multi-tenant SaaS**. Persistent run storage, authentication/authorization, tenant isolation, quotas/rate limiting, durable workers, cancellation, model-provider adapters, robust secret redaction, and a frontend are not yet implemented. Do not expose it as a public multi-user service until these controls, security tests, and load tests are implemented and reviewed.
+This is an engineering foundation, **not yet a production-ready multi-tenant SaaS**. Persistent run storage, authentication/authorization, tenant isolation, quotas/rate limiting, durable workers, cancellation, real model-provider adapters, robust secret redaction, and a frontend are not yet implemented. Do not expose it as a public multi-user service until these controls, security tests, and load tests are implemented and reviewed.
 
 ## Roadmap
 
 1. Expand correctness, robustness, and security scenario packs.
-2. Add provider/agent adapters (starting with OpenRouter) without coupling the core runner to a vendor.
+2. Add real agent/framework adapters and model-provider adapters (starting with OpenRouter).
 3. Add adversarial prompt and tool-use evaluation with trace capture and policy assertions.
-4. Add persistent evaluation history, authenticated projects, quotas, and isolated workers.
-5. Add richer metrics, tracing, regression comparisons, and load/performance tests.
+4. Implement isolated workers before running untrusted agents.
+5. Add persistent evaluation history, authentication, quotas, regression comparisons, richer tracing, and load tests.
