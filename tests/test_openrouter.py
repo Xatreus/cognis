@@ -58,3 +58,14 @@ def test_openrouter_rejects_provider_http_error_without_exposing_body():
     with pytest.raises(RuntimeError, match="HTTP 401") as error:
         asyncio.run(run())
     assert "sensitive provider detail" not in str(error.value)
+
+
+def test_openrouter_endpoint_reports_missing_configuration(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_MODEL", raising=False)
+    response = TestClient(app).post("/evaluations/openrouter", json={})
+    assert response.status_code == 503
+    assert "OPENROUTER_API_KEY" in response.json()["detail"]
