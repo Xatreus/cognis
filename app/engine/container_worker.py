@@ -9,7 +9,7 @@ keep its socket inaccessible to public clients.
 from __future__ import annotations
 
 import io
-import json
+import logging
 import os
 import tarfile
 import time
@@ -17,6 +17,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.engine.worker_protocol import WorkerRequest, WorkerResponse
+
+logger = logging.getLogger(__name__)
 
 
 class ContainerWorkerError(RuntimeError):
@@ -105,9 +107,15 @@ def run_container_agent(
 
         # Container has no bind mounts. Request content is copied into ephemeral
         # tmpfs, then removed with the container. Network is denied unless opted in.
+        # Docker's archive API requires the target container to be running.
+        # Start a tiny wait loop, copy the request into tmpfs, then exec worker.
+        worker_command = (
+            "while [ ! -f /tmp/cognis-request.json ]; do sleep 0.05; done; "
+            "exec python -m app.engine.worker_entry --request-file /tmp/cognis-request.json"
+        )
         container = client.containers.create(
             image=policy.image,
-            command=["python", "-m", "app.engine.worker_entry", "--request-file", "/tmp/cognis-request.json"],
+            command=["/bin/sh", "-c", worker_command],
             stdin_open=False,
             tty=False,
             detach=True,
@@ -124,8 +132,13 @@ def run_container_agent(
             environment=_provider_environment(agent_id),
             labels={"com.cognis.managed-worker": "true"},
         )
-        container.put_archive("/tmp", _request_archive(payload))
+        operation = "start container"
         container.start()
+        operation = "copy request archive"
+        copied = container.put_archive("/tmp", _request_archive(payload))
+        if copied is False:
+            raise ContainerWorkerError("Docker Engine rejected the worker request archive")
+        operation = "wait for worker"
         result = container.wait(timeout=policy.timeout_seconds)
         status_code = result.get("StatusCode", 1)
         logs = container.logs(stdout=True, stderr=False)
@@ -146,7 +159,13 @@ def run_container_agent(
     except ContainerWorkerError:
         raise
     except Exception as exc:
-        # Don't surface daemon URLs, auth configuration, or raw Docker exceptions.
+        # Detailed diagnostics stay in server logs, not in the public response.
+        logger.exception(
+            "Container worker operation failed: operation=%s exception=%s docker_status=%s",
+            locals().get("operation", "initialize Docker client"),
+            type(exc).__name__,
+            getattr(exc, "status_code", None),
+        )
         raise ContainerWorkerError(f"Container worker failed ({type(exc).__name__})") from exc
     finally:
         if container is not None:
