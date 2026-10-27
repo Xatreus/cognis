@@ -41,6 +41,10 @@ def test_container_policy_defaults_to_network_disabled():
 
 
 def test_provider_environment_is_allowlisted(monkeypatch):
+    # Keep this test independent of provider settings in the developer's shell.
+    for name in ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENROUTER_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-secret")
     monkeypatch.setenv("OTHER_SECRET", "should-not-pass")
     assert _provider_environment("demo") == {}
