@@ -12,12 +12,15 @@ class EvaluationCase:
     expected_output: Any | None = None
     contains: tuple[str, ...] = ()
     not_contains: tuple[str, ...] = ()
+    max_latency_ms: float | None = None
     tags: tuple[str, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.case_id.strip():
             raise ValueError("case_id must not be empty")
+        if self.max_latency_ms is not None and self.max_latency_ms <= 0:
+            raise ValueError("max_latency_ms must be greater than zero")
 
 
 @dataclass(frozen=True)
