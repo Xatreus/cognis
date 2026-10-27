@@ -76,6 +76,8 @@ def run_container_agent(
     policy = policy or ContainerPolicy()
     if agent_id not in {"demo", "openrouter"}:
         raise ContainerWorkerError("Unknown agent_id; only registered adapters can execute")
+    if policy is not None and policy.network_enabled and agent_id != "openrouter":
+        raise ContainerWorkerError("Network access is allowed only for the registered OpenRouter adapter")
 
     try:
         import docker
