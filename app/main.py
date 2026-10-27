@@ -7,7 +7,7 @@ import logging
 import os
 import secrets
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
@@ -19,6 +19,8 @@ load_dotenv()
 from app.agents.openrouter import OpenRouterAgent, OpenRouterConfigurationError
 from app.engine.evaluator import run_demo_evaluation, run_evaluation
 from app.engine.provider_scenarios import OPENROUTER_SMOKE_SCENARIO
+from app.engine.isolation import IsolatedWorkerError, IsolationPolicy, run_isolated_agent
+from app.engine.runner import AgentExecutionError
 from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.logging import configure_logging
 from app.schemas.evaluations import EvaluationRequest, EvaluationResponse
@@ -70,6 +72,26 @@ class CaseRequest(BaseModel):
     not_contains: list[str] = Field(default_factory=list, max_length=20)
     max_latency_ms: float | None = Field(default=None, gt=0)
     tags: list[str] = Field(default_factory=list, max_length=20)
+
+
+class IsolatedEvaluationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    agent_id: Literal["demo", "openrouter"] = "demo"
+    suite: str = Field(min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9_.-]+$")
+    cases: list[CaseRequest] = Field(min_length=1, max_length=MAX_CASES_PER_REQUEST)
+    include_traces: bool = True
+    timeout_seconds: float = Field(default=10, gt=0, le=min(MAX_TIMEOUT_SECONDS, 60))
+    memory_limit_mb: int = Field(default=512, ge=64, le=2048)
+
+    @model_validator(mode="after")
+    def validate_case_ids(self):
+        ids = [case.case_id for case in self.cases]
+        if len(ids) != len(set(ids)):
+            raise ValueError("case_id values must be unique within a suite")
+        for case in self.cases:
+            if len(str(case.input)) > MAX_INPUT_CHARS:
+                raise ValueError(f"input for case {case.case_id!r} exceeds {MAX_INPUT_CHARS} characters")
+        return self
 
 
 class CustomEvaluationRequest(BaseModel):
@@ -164,6 +186,61 @@ async def create_custom_evaluation(request: CustomEvaluationRequest):
     except Exception as exc:
         logger.exception("Custom evaluation failed")
         raise HTTPException(status_code=500, detail="Custom evaluation failed") from exc
+
+
+@app.post(
+    "/evaluations/isolated",
+    response_model=EvaluationResponse,
+    tags=["evaluations"],
+    summary="Evaluate a registered agent in a child process",
+    dependencies=[Depends(require_api_key)],
+)
+async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
+    """Run only a built-in registered adapter in a fresh subprocess per case.
+
+    This is stronger fault containment than in-process invocation, but is not a
+    hostile-code sandbox: OS network/filesystem restrictions are not enforced.
+    """
+    from app.engine.evaluator import run_evaluation_async
+
+    scenario = EvaluationScenario(
+        name=request.suite,
+        description="Evaluation via a registered subprocess worker",
+        cases=tuple(EvaluationCase(
+            case_id=case.case_id,
+            input=case.input,
+            expected_output=case.expected_output,
+            contains=tuple(case.contains),
+            not_contains=tuple(case.not_contains),
+            max_latency_ms=case.max_latency_ms,
+            tags=tuple(case.tags),
+        ) for case in request.cases),
+    )
+
+    class RegisteredWorker:
+        def run(self, input_data):
+            try:
+                output, _worker_duration_ms = run_isolated_agent(
+                    request.agent_id,
+                    input_data,
+                    IsolationPolicy(
+                        timeout_seconds=request.timeout_seconds,
+                        memory_limit_mb=request.memory_limit_mb,
+                    ),
+                )
+                return output
+            except IsolatedWorkerError as exc:
+                raise AgentExecutionError(str(exc)) from exc
+
+    try:
+        return await run_evaluation_async(
+            RegisteredWorker(), scenario,
+            include_traces=request.include_traces,
+            timeout_seconds=request.timeout_seconds + 3,
+        )
+    except Exception as exc:
+        logger.exception("Isolated evaluation failed")
+        raise HTTPException(status_code=502, detail="Isolated evaluation failed") from exc
 
 
 @app.post(
