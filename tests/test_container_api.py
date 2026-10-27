@@ -55,3 +55,12 @@ def test_container_evaluation_does_not_accept_arbitrary_agent_id():
         "cases": [{"case_id": "one", "input": "hello"}],
     })
     assert response.status_code == 422
+
+def test_container_evaluation_rejects_network_for_demo_agent():
+    response = client.post("/evaluations/container", json={
+        "agent_id": "demo",
+        "suite": "no-network-demo",
+        "network_enabled": True,
+        "cases": [{"case_id": "one", "input": "hello"}],
+    })
+    assert response.status_code == 422
