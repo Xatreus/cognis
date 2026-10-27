@@ -27,6 +27,8 @@ services:
       DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"
     profiles: ["docker-workers"]
     restart: unless-stopped
 
