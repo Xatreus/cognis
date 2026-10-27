@@ -8,4 +8,4 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 COPY app ./app
 RUN python -c "import os; os.chmod('/app', 0o555)"
 USER 65532:65532
-ENTRYPOINT ["python", "-m", "app.engine.worker_entry"]
+CMD ["python", "-m", "app.engine.worker_entry"]
