@@ -124,7 +124,7 @@ def run_container_agent(
         operation = "send request over worker stdin"
         stdin_socket = container.attach_socket(params={"stdin": 1, "stream": 1})
         try:
-            stdin_socket._sock.sendall(payload + b"\\n")
+            stdin_socket._sock.sendall(payload + b"\n")
         finally:
             stdin_socket.close()
         operation = "wait for worker"
