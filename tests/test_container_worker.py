@@ -4,7 +4,7 @@ from app.engine.container_worker import (
     ContainerPolicy,
     ContainerWorkerError,
     _provider_environment,
-    _request_archive,
+    _request_payload,
     run_container_agent,
 )
 
@@ -20,15 +20,19 @@ def test_container_policy_rejects_unbounded_limits():
         ContainerPolicy(pids_limit=2)
 
 
-def test_request_archive_contains_only_request_file():
-    import io
-    import tarfile
-    payload = b'{"protocol_version":1}'
-    with tarfile.open(fileobj=io.BytesIO(_request_archive(payload)), mode="r:") as archive:
-        members = archive.getmembers()
-        assert [item.name for item in members] == ["cognis-request.json"]
-        assert archive.extractfile(members[0]).read() == payload
-        assert members[0].mode == 0o444
+def test_request_payload_is_valid_worker_protocol_json():
+    import json
+
+    payload = _request_payload("demo", "hello", 1024)
+    parsed = json.loads(payload)
+    assert parsed["protocol_version"] == 1
+    assert parsed["agent_id"] == "demo"
+    assert parsed["input"] == "hello"
+
+
+def test_request_payload_rejects_oversized_input():
+    with pytest.raises(ContainerWorkerError, match="size limit"):
+        _request_payload("demo", "x" * 2048, 1024)
 
 
 def test_container_worker_rejects_unregistered_agent_before_docker():
