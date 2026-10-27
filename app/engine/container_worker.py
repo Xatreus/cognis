@@ -54,7 +54,7 @@ def _request_archive(payload: bytes) -> bytes:
     with tarfile.open(fileobj=stream, mode="w") as archive:
         info = tarfile.TarInfo("cognis-request.json")
         info.size = len(payload)
-        info.mode = 0o400
+        info.mode = 0o444
         archive.addfile(info, io.BytesIO(payload))
     return stream.getvalue()
 
@@ -121,7 +121,6 @@ def run_container_agent(
             tmpfs={"/tmp": f"rw,noexec,nosuid,nodev,size={min(policy.max_output_bytes * 2, 8_000_000)}"},
             environment=_provider_environment(agent_id),
             labels={"com.cognis.managed-worker": "true"},
-            network_disabled=not policy.network_enabled,
         )
         container.put_archive("/tmp", _request_archive(payload))
         container.start()
