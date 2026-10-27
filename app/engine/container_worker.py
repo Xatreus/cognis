@@ -48,6 +48,14 @@ class ContainerPolicy:
             raise ValueError("image must be a non-empty image reference")
 
 
+def _request_payload(agent_id: str, input_data: Any, max_bytes: int) -> bytes:
+    """Serialize and bound the request sent to a worker over stdin."""
+    payload = WorkerRequest(agent_id=agent_id, input=input_data).model_dump_json().encode("utf-8")
+    if len(payload) > max_bytes:
+        raise ContainerWorkerError("Worker request exceeded configured size limit")
+    return payload
+
+
 def _provider_environment(agent_id: str) -> dict[str, str]:
     """Only pass the explicitly needed provider variables to provider workers."""
     if agent_id != "openrouter":
@@ -76,10 +84,7 @@ def run_container_agent(
             "Docker SDK is not installed; install requirements and rebuild the API image"
         ) from exc
 
-    request = WorkerRequest(agent_id=agent_id, input=input_data)
-    payload = request.model_dump_json().encode("utf-8")
-    if len(payload) > policy.max_output_bytes:
-        raise ContainerWorkerError("Worker request exceeded configured size limit")
+    payload = _request_payload(agent_id, input_data, policy.max_output_bytes)
     client = None
     container = None
     started = time.perf_counter()
