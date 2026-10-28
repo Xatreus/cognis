@@ -84,7 +84,7 @@ def save_evaluation(result: Any, tenant_id: str = "local") -> dict[str, Any]:
     initialize_store()
     payload = result.model_dump(mode="json")
     created_at = datetime.now(timezone.utc).isoformat()
-    with _connect() as conn:
+    with closing(_connect()) as conn, conn:
         if _is_postgres(conn):
             conn.execute("""
                 INSERT INTO evaluation_runs
