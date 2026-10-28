@@ -172,11 +172,15 @@ class CustomEvaluationRequest(BaseModel):
 
 
 async def require_api_key(authorization: str | None = Header(default=None)):
-    """Optional bearer-token gate. Configure COGNIS_API_KEY for deployments."""
-    if not API_KEY:
+    """Bearer-token gate; read the secret at request time for safe rotation and tests."""
+    configured_key = os.getenv("COGNIS_API_KEY", "").strip()
+    if not configured_key:
+        # Local development is intentionally permissive; production startup fails closed.
+        if COGNIS_ENV == "production":
+            raise HTTPException(status_code=503, detail="API authentication is not configured")
         return
     scheme, _, supplied = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not secrets.compare_digest(supplied, API_KEY):
+    if scheme.lower() != "bearer" or not supplied or not secrets.compare_digest(supplied, configured_key):
         raise HTTPException(status_code=401, detail="Valid bearer token required")
 
 
