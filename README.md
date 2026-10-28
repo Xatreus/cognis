@@ -12,7 +12,7 @@ Cognis is an extensible evaluation and reliability-testing platform for AI agent
 - Per-case results plus pass-rate and latency metrics (mean, p50, p95, max).
 - OpenRouter chat-completions adapter, with credentials loaded from environment variables.
 - Custom evaluation API with bounded case counts, input lengths, and timeouts.
-- Optional bearer-token API authentication using `COGNIS_API_KEY`.
+- Bearer-token authentication mapped to server-configured tenant identities (`COGNIS_API_KEYS_JSON` or the legacy single-tenant `COGNIS_API_KEY`).\n- Tenant-scoped evaluation history queries; one tenant cannot list or retrieve another tenant’s evaluation records.\n- PostgreSQL support via `COGNIS_DATABASE_URL`, with SQLite retained for local development.
 - Docker image, Compose configuration, health endpoints, and CI.
 
 ## Run locally (Windows PowerShell)
@@ -40,12 +40,12 @@ If `COGNIS_API_KEY` is configured, protected endpoints require `Authorization: B
 
 ### Persisted evaluation history
 
-Completed demo, custom, isolated, container, and OpenRouter evaluation runs are stored in SQLite before the API returns a successful response. The default local database is `data/cognis.db` (ignored by Git); Docker uses `/data/cognis.db` on the named `cognis-data` volume. Configure `COGNIS_DATABASE_PATH` to choose another path.
+Completed demo, custom, isolated, container, and OpenRouter evaluation runs are stored before the API returns a successful response. SQLite is used by default for local development (`data/cognis.db`); set `COGNIS_DATABASE_URL` to a PostgreSQL connection URL for shared deployments. Configure `COGNIS_DATABASE_PATH` to choose a different SQLite file. Every stored run is associated with the tenant derived from its authenticated bearer token; caller-supplied tenant IDs are never trusted.
 
 - `GET /evaluations/history?limit=20&offset=0` — paginated run summaries.
 - `GET /evaluations/history/{evaluation_id}` — full stored response and creation timestamp.
 
-History endpoints use the same bearer-token gate as evaluation endpoints. SQLite is suitable for local development and a single API instance; use PostgreSQL with migrations and tenant-scoped queries before horizontal scaling or multi-tenant production.
+History endpoints use the same bearer-token gate as evaluation endpoints. History endpoints only return records for the authenticated tenant. For a multi-tenant local/demo setup, set `COGNIS_API_KEYS_JSON` to a JSON object mapping distinct bearer tokens to tenant IDs, for example `{"demo-key-customer-a":"customer-a","demo-key-customer-b":"customer-b"}`. Use randomly generated secrets in deployment and keep this configuration in a secret manager—not source control. For PostgreSQL, set `COGNIS_DATABASE_URL` (for example `postgresql://cognis:<password>@localhost:5432/cognis`). The Compose PostgreSQL service is available with the `postgres` profile; set `POSTGRES_PASSWORD` before starting it. Existing SQLite databases are upgraded with a legacy tenant marker; their historical records are not automatically assigned to a customer.
 
 ### Health
 
@@ -194,7 +194,7 @@ Adapters should normalize the target framework's output and preserve relevant to
 **Do not treat this repository as a finished, publicly deployable multi-tenant production SaaS.** This hardening pass adds bounded custom evaluation, optional API authentication, and SQLite-backed history for a single instance, but it does not provide all controls required for a public service.
 
 - The runner executes trusted agent code in-process. Async/thread timeouts do not safely terminate hostile code. Never submit untrusted code; use disposable, resource-limited isolated workers before adding that capability.
-- The optional bearer token is a single shared service credential, not user identity, tenant isolation, or per-user authorization. Configure it before exposing the API; a secret-free deployment is intended only for local development or a tightly restricted trusted network.
+- Tenant identities are mapped from bearer credentials configured by the operator; the caller cannot choose a tenant ID in request data. The simple environment mapping is a portfolio/demo credential registry, not a self-service key-management system. Use a proper secrets manager, key rotation, rate limiting, audit trails, and a security review before operating this as a public SaaS.
 - SQLite evaluation history is persisted for a single instance. There are no durable worker queues, distributed rate limits/quotas, cancellation, tenant-aware storage, or regression dashboard. SQLite is not a substitute for PostgreSQL in a horizontally scaled multi-tenant deployment.
 - The secret-pattern check is heuristic, and the prompt-injection/canary scenarios are baseline regressions, not comprehensive security assessments. Use synthetic canaries only, and design tests for the agent's actual threat model.
 - The current OpenRouter adapter supports single-turn text chat. Tool calls, agent traces, multimodal inputs, provider cost/token telemetry, and framework-specific execution are not fully implemented.
