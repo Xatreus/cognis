@@ -9,6 +9,7 @@ import json
 import os
 import sqlite3
 from datetime import datetime, timezone
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -28,7 +29,7 @@ def _connect() -> sqlite3.Connection:
 
 
 def initialize_store() -> None:
-    with _connect() as conn:
+    with closing(_connect()) as conn, conn:
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS evaluation_runs (
