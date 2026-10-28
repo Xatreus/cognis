@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, production-hardening, durable-evaluations]
+    branches: [main, production-hardening, durable-evaluations, postgres-tenant-isolation]
   pull_request:
     branches: [main]
 
