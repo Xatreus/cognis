@@ -39,7 +39,7 @@ COGNIS_ENV = os.getenv("COGNIS_ENV", "development").strip().lower()
 
 # Fail closed in production rather than silently running protected endpoints
 # without authentication when a deployment secret was omitted.
-if COGNIS_ENV == "production" and len(API_KEY) < 32:
+if COGNIS_ENV == "production" and len(API_KEY) < 32 and not os.getenv("COGNIS_API_KEYS_JSON", "").strip():
     raise RuntimeError(
         "Production requires COGNIS_API_KEY with at least 32 characters."
     )
