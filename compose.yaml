@@ -5,7 +5,10 @@ services:
       - "8000:8000"
     environment:
       COGNIS_LOG_LEVEL: INFO
+      COGNIS_DATABASE_PATH: /data/cognis.db
       COGNIS_CONTAINER_WORKER_IMAGE: cognis-agent-worker:latest
+    volumes:
+      - cognis-data:/data
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
       interval: 30s
@@ -16,16 +19,18 @@ services:
     profiles: ["api"]
 
   # Opt-in only: mounting the Docker socket gives this API container control
-  # over the host daemon. Use a dedicated worker host/daemon in real production.
+  # over the host daemon. Use a dedicated worker host/daemon in production.
   cognis-api-with-docker-workers:
     build: .
     ports:
       - "8000:8000"
     environment:
       COGNIS_LOG_LEVEL: INFO
+      COGNIS_DATABASE_PATH: /data/cognis.db
       COGNIS_CONTAINER_WORKER_IMAGE: cognis-agent-worker:latest
       DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
+      - cognis-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     group_add:
       - "${DOCKER_GID:-999}"
@@ -38,3 +43,6 @@ services:
       dockerfile: Dockerfile.worker
     image: cognis-agent-worker:latest
     profiles: ["docker-workers"]
+
+volumes:
+  cognis-data:
