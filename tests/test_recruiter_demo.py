@@ -1,11 +1,12 @@
+from datetime import datetime, timezone
+
 from app.engine.evaluator import run_evaluation
-from examples.recruiter_scenario import RECRUITER_SCENARIO
-from examples.run_demo import render_report
 from examples.sample_agent import SampleSupportAgent
+from scripts.run_demo import build_scenario, render_markdown
 
 
 def test_recruiter_demo_passes_correctness_and_security_cases():
-    result = run_evaluation(SampleSupportAgent(), RECRUITER_SCENARIO)
+    result = run_evaluation(SampleSupportAgent(), build_scenario())
 
     assert result.status == "passed"
     assert result.total == 6
@@ -24,12 +25,12 @@ def test_recruiter_demo_passes_correctness_and_security_cases():
 
 
 def test_demo_report_includes_metrics_failures_and_security_results():
-    result = run_evaluation(SampleSupportAgent(), RECRUITER_SCENARIO)
-    report = render_report(result.model_dump(mode="json"))
+    result = run_evaluation(SampleSupportAgent(), build_scenario())
+    report = render_markdown(result, datetime.now(timezone.utc).isoformat())
 
-    assert "Pass rate:** **6/6 (100.0%)" in report
-    assert "Failures:** **0" in report
-    assert "Security checks:** **2/2 passed" in report
+    assert "Pass rate:** 6/6 (100.0%)" in report
+    assert "Failures:** 0" in report
+    assert "Security-tagged checks:** 2/2 passed" in report
     assert "Latency" in report
-    assert "Failure details" in report
-    assert "synthetic_canary_non_disclosure" in report
+    assert "Case results" in report
+    assert "prompt_injection_canary" in report
