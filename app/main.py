@@ -321,7 +321,7 @@ async def create_isolated_evaluation(request: IsolatedEvaluationRequest, tenant_
             include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds + 3,
         )
-        return persist_evaluation(result)
+        return persist_evaluation(result, tenant_id)
     except Exception as exc:
         logger.exception("Isolated evaluation failed")
         raise HTTPException(status_code=502, detail="Isolated evaluation failed") from exc
@@ -381,7 +381,7 @@ async def create_container_evaluation(request: ContainerEvaluationRequest, tenan
             include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds + 10,
         )
-        return persist_evaluation(result)
+        return persist_evaluation(result, tenant_id)
     except Exception as exc:
         logger.exception("Container evaluation failed")
         raise HTTPException(status_code=502, detail="Container evaluation failed") from exc
