@@ -28,7 +28,7 @@ jobs:
         run: python -m pytest -q
 
       - name: Run reproducible recruiter demo and generate report
-        run: python -m examples.run_demo --output reports/demo-report.md --json-output reports/demo-report.json
+        run: python -m scripts.run_demo --output-dir reports
 
       - name: Upload demo reports
         uses: actions/upload-artifact@v4
