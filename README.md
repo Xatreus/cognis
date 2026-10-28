@@ -38,6 +38,15 @@ If `COGNIS_API_KEY` is configured, protected endpoints require `Authorization: B
 
 ## Endpoints
 
+### Persisted evaluation history
+
+Completed demo, custom, isolated, container, and OpenRouter evaluation runs are stored in SQLite before the API returns a successful response. The default local database is `data/cognis.db` (ignored by Git); Docker uses `/data/cognis.db` on the named `cognis-data` volume. Configure `COGNIS_DATABASE_PATH` to choose another path.
+
+- `GET /evaluations/history?limit=20&offset=0` — paginated run summaries.
+- `GET /evaluations/history/{evaluation_id}` — full stored response and creation timestamp.
+
+History endpoints use the same bearer-token gate as evaluation endpoints. SQLite is suitable for local development and a single API instance; use PostgreSQL with migrations and tenant-scoped queries before horizontal scaling or multi-tenant production.
+
 ### Health
 
 - `GET /health/live`
@@ -182,11 +191,11 @@ Adapters should normalize the target framework's output and preserve relevant to
 
 ## Security model and production limitations
 
-**Do not treat this repository as a finished, publicly deployable multi-tenant production SaaS.** This hardening pass adds bounded custom evaluation and optional API authentication, but it does not provide all controls required for a public service.
+**Do not treat this repository as a finished, publicly deployable multi-tenant production SaaS.** This hardening pass adds bounded custom evaluation, optional API authentication, and SQLite-backed history for a single instance, but it does not provide all controls required for a public service.
 
 - The runner executes trusted agent code in-process. Async/thread timeouts do not safely terminate hostile code. Never submit untrusted code; use disposable, resource-limited isolated workers before adding that capability.
 - The optional bearer token is a single shared service credential, not user identity, tenant isolation, or per-user authorization. Configure it before exposing the API; a secret-free deployment is intended only for local development or a tightly restricted trusted network.
-- Evaluation history is not persisted. There are no durable queues, distributed rate limits/quotas, cancellation, tenant-aware storage, or regression dashboard.
+- SQLite evaluation history is persisted for a single instance. There are no durable worker queues, distributed rate limits/quotas, cancellation, tenant-aware storage, or regression dashboard. SQLite is not a substitute for PostgreSQL in a horizontally scaled multi-tenant deployment.
 - The secret-pattern check is heuristic, and the prompt-injection/canary scenarios are baseline regressions, not comprehensive security assessments. Use synthetic canaries only, and design tests for the agent's actual threat model.
 - The current OpenRouter adapter supports single-turn text chat. Tool calls, agent traces, multimodal inputs, provider cost/token telemetry, and framework-specific execution are not fully implemented.
 - Before public production use, add isolated workers, identity and tenant boundaries, durable storage/queueing, rate limits, audit logging and secret redaction, robust telemetry, dependency/security scanning, load tests, deployment secrets management, and a security review.
