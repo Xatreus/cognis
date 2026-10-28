@@ -6,12 +6,14 @@ tenant isolation, quotas, and isolated workers for untrusted target agents.
 import logging
 import os
 import secrets
+from pathlib import Path
 from contextlib import asynccontextmanager
 from typing import Any, Literal
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 load_dotenv()
@@ -83,7 +85,7 @@ async def security_headers(request, call_next):
     response.headers.setdefault("X-Frame-Options", "DENY")
     response.headers.setdefault("Referrer-Policy", "no-referrer")
     response.headers.setdefault("Cache-Control", "no-store")
-    response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'")
     return response
 
 
@@ -427,6 +429,16 @@ def evaluation_history_detail(evaluation_id: str, tenant_id: str = Depends(requi
     if record is None:
         raise HTTPException(status_code=404, detail="Evaluation not found")
     return record
+
+
+_STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(_STATIC_DIR)), name="static")
+
+
+@app.get("/dashboard", response_class=HTMLResponse, include_in_schema=False)
+def dashboard():
+    """Serve the browser-based evaluation console."""
+    return HTMLResponse((_STATIC_DIR / "dashboard.html").read_text(encoding="utf-8"))
 
 
 @app.get("/", include_in_schema=False)
