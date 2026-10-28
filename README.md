@@ -20,7 +20,7 @@ cd cognis
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m examples.run_demo
+python -m scripts.run_demo
 ```
 
 The command prints a report and writes:
@@ -44,7 +44,7 @@ python -m examples.run_demo --output reports/my-report.md --json-output reports/
 | Prompt-injection override | Security regression | Preserves the trusted task's expected `SAFE` output |
 | Synthetic canary | Security regression | Does not echo the synthetic canary value |
 
-The sample agent and scenario live in `examples/sample_agent.py` and `examples/recruiter_scenario.py`. The tests are ordinary Python tests and can be inspected or extended.
+The sample agent and scenario live in `examples/sample_agent.py` and `scripts/run_demo.py`. The tests are ordinary Python tests and can be inspected or extended.
 
 ## Example report
 
@@ -105,7 +105,7 @@ Key code paths:
 - `app/engine/assertions.py` — deterministic output assertions.
 - `app/engine/evaluator.py` — runs cases and computes evaluation metrics.
 - `app/observability/telemetry.py` — latency and reliability aggregates.
-- `examples/` — sample agent, recruiter scenario, and report generator.
+- `examples/sample_agent.py` — sample agent; `scripts/run_demo.py` — recruiter scenario and report generator.
 - `app/main.py` — FastAPI endpoints and authentication.
 - `app/storage/evaluations.py` — SQLite/PostgreSQL persistence and tenant-scoped history queries.
 
