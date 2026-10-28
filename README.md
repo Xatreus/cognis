@@ -1,209 +1,159 @@
 # Cognis
 
-Cognis is an extensible evaluation and reliability-testing platform for AI agents. It provides a provider-neutral Python evaluation core and a FastAPI service for evaluating a configured OpenRouter model against caller-defined cases.
+**Cognis is an agent evaluation and reliability-testing platform.** It runs a defined set of inputs against an agent, checks its outputs against explicit assertions, records per-case latency, and produces a report that can be inspected and reproduced.
 
-## What is implemented
+This repository includes a **no-API-key recruiter demo**: a deterministic sample support agent, six committed test cases, and Markdown/JSON reports. It is designed to demonstrate the evaluation workflow clearly; it is not presented as a production security certification or an LLM benchmark.
 
-- Typed, reusable test cases and named evaluation scenarios.
-- Python adapters for trusted callable agents and common `run`, `invoke`, `arun`, and `ainvoke` interfaces.
-- Async-aware execution with per-invocation timeouts (not a security sandbox).
-- Deterministic output assertions, required/forbidden text checks, per-case latency budgets, and a heuristic for obvious credential-like output.
-- Baseline prompt-injection and synthetic-canary non-disclosure scenario builders.
-- Per-case results plus pass-rate and latency metrics (mean, p50, p95, max).
-- OpenRouter chat-completions adapter, with credentials loaded from environment variables.
-- Custom evaluation API with bounded case counts, input lengths, and timeouts.
-- Bearer-token authentication mapped to server-configured tenant identities (`COGNIS_API_KEYS_JSON` or the legacy single-tenant `COGNIS_API_KEY`).\n- Tenant-scoped evaluation history queries; one tenant cannot list or retrieve another tenant’s evaluation records.\n- PostgreSQL support via `COGNIS_DATABASE_URL`, with SQLite retained for local development.
-- Docker image, Compose configuration, health endpoints, and CI.
+## See the demo first
 
-## Run locally (Windows PowerShell)
+### Requirements
+- Python 3.12 (the CI version)
+- Git
 
-Use Python 3.12.
+No OpenRouter key, Docker daemon, PostgreSQL server, or network access is needed for the standalone demo.
+
+### Windows PowerShell
 
 ```powershell
+git clone https://github.com/Xatreus/cognis.git
+cd cognis
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+python -m scripts.run_demo
 ```
 
-Set `OPENROUTER_API_KEY` and `OPENROUTER_MODEL` in `.env`. Leave `COGNIS_API_KEY` empty for local development only; set a long random value before exposing the API beyond localhost. Then run:
+The command prints a report and writes:
+- `reports/demo-report.md` — human-readable summary, latency metrics, per-case outcomes, and failure details.
+- `reports/demo-report.json` — complete machine-readable evaluation result, including assertions and case metadata.
+
+Exit code is `0` when every case passes and `1` when the evaluation fails. To choose another output path:
 
 ```powershell
-python -m uvicorn app.main:app --reload
+python -m examples.run_demo --output reports/my-report.md --json-output reports/my-report.json
 ```
 
-Open `http://127.0.0.1:8000/docs`.
+### What the six cases check
 
-If `COGNIS_API_KEY` is configured, protected endpoints require `Authorization: Bearer <your-key>`. Health endpoints remain unauthenticated for liveness/readiness probes. Do not paste secrets into issues, source code, test fixtures, or logs. For deployed environments, set `COGNIS_ENV=production` and configure a randomly generated `COGNIS_API_KEY` of at least 32 characters. In production mode the API refuses to start if that key is missing or too short, rather than silently disabling authentication. Keep `COGNIS_ENV=development` for local work.
+| Case | Category | Expected behavior |
+|---|---|---|
+| Cancelled order refund | Correctness | Routes to `refund_eligible` |
+| Delivered order refund | Correctness | Routes to `review_required` |
+| Invoice question | Correctness | Routes to `human_review` |
+| Empty input | Robustness | Returns an evaluation result of `error` |
+| Prompt-injection override | Security regression | Preserves the trusted task's expected `SAFE` output |
+| Synthetic canary | Security regression | Does not echo the synthetic canary value |
 
-## Endpoints
+The sample agent and scenario live in `examples/sample_agent.py` and `scripts/run_demo.py`. The tests are ordinary Python tests and can be inspected or extended.
 
-### Persisted evaluation history
+## Example report
 
-Completed demo, custom, isolated, container, and OpenRouter evaluation runs are stored before the API returns a successful response. SQLite is used by default for local development (`data/cognis.db`); set `COGNIS_DATABASE_URL` to a PostgreSQL connection URL for shared deployments. Configure `COGNIS_DATABASE_PATH` to choose a different SQLite file. Every stored run is associated with the tenant derived from its authenticated bearer token; caller-supplied tenant IDs are never trusted.
+A successful run should report **6/6 passed**, **0 failures**, and **2/2 security-tagged cases passed**. Latency is measured at runtime, so exact values vary by machine. Each report includes:
 
-- `GET /evaluations/history?limit=20&offset=0` — paginated run summaries.
-- `GET /evaluations/history/{evaluation_id}` — full stored response and creation timestamp.
+- Overall status and pass rate
+- Failure count and per-case expected/actual output
+- Mean, p50, p95, and maximum latency
+- Security-tagged case results
+- Assertion failures and diagnostic messages
+- An explicit limitations section
 
-History endpoints use the same bearer-token gate as evaluation endpoints. History endpoints only return records for the authenticated tenant. For a multi-tenant local/demo setup, set `COGNIS_API_KEYS_JSON` to a JSON object mapping distinct bearer tokens to tenant IDs, for example `{"demo-key-customer-a":"customer-a","demo-key-customer-b":"customer-b"}`. Use randomly generated secrets in deployment and keep this configuration in a secret manager—not source control. For PostgreSQL, set `COGNIS_DATABASE_URL` (for example `postgresql://cognis:<password>@localhost:5432/cognis`). The Compose PostgreSQL service is available with the `postgres` profile; set `POSTGRES_PASSWORD` before starting it. Existing SQLite databases are upgraded with a legacy tenant marker; their historical records are not automatically assigned to a customer.
+The report is generated from the actual evaluation response, not a hard-coded example. CI runs the same demo and uploads the Markdown and JSON outputs as the `cognis-demo-report` artifact.
 
-### Health
-
-- `GET /health/live`
-- `GET /health/ready`
-
-### Deterministic demo
-
-`POST /evaluations`
-
-```json
-{"suite":"demo","include_traces":true}
-```
-
-### Live OpenRouter smoke test
-
-`POST /evaluations/openrouter`
-
-```json
-{"include_traces":true,"timeout_seconds":30}
-```
-
-This makes a real provider request and may incur charges. It asks the configured model to return `COGNIS_OK`. A passing result establishes only basic connectivity and instruction-following for that run, not general quality or security.
-
-### Custom evaluation against the configured OpenRouter model
-
-`POST /evaluations/custom`
-
-```json
-{
-  "suite": "refund-policy-regression",
-  "include_traces": true,
-  "timeout_seconds": 20,
-  "cases": [
-    {
-      "case_id": "cancelled_refund",
-      "input": "Order cancelled; customer requests refund. Reply exactly refund_eligible.",
-      "expected_output": "refund_eligible",
-      "not_contains": ["COMPROMISED"],
-      "max_latency_ms": 5000,
-      "tags": ["correctness", "refund"]
-    },
-    {
-      "case_id": "invoice_question",
-      "input": "Where can I find my invoice? Reply exactly billing_support.",
-      "expected_output": "billing_support",
-      "tags": ["correctness"]
-    }
-  ]
-}
-```
-
-The API bounds cases per request, input length, and timeout using `COGNIS_MAX_CASES_PER_REQUEST`, `COGNIS_MAX_INPUT_CHARS`, and `COGNIS_MAX_TIMEOUT_SECONDS`. Calls can consume provider credits. The case inputs and expected outcomes are supplied by you; meaningful evaluation depends on well-designed test data and outcome oracles.
-
-
-### Container-isolated worker (experimental)
-
-`POST /evaluations/container` runs each case in a disposable Docker container. The separate `Dockerfile.worker` image runs as UID 65532 with a read-only root filesystem, all Linux capabilities dropped, `no-new-privileges`, no host mounts, private IPC, an ephemeral `/tmp`, and bounded memory, CPU, PIDs, wall-clock time, and output. Network is disabled by default. Only the built-in `demo` and `openrouter` adapters are accepted; requests cannot select arbitrary imports or upload code.
-
-Build the worker image first:
-
-```powershell
-docker build -f Dockerfile.worker -t cognis-agent-worker:latest .
-```
-
-The API process needs access to a Docker Engine to create disposable workers. For local Linux development, configure Docker SDK access to a dedicated development daemon. The optional Compose service below mounts the host Docker socket; **the Docker socket is effectively host-root access**. Do not expose that API service publicly or use the same daemon that hosts sensitive workloads. For real production, use a separate worker host/daemon or a narrowly scoped remote worker service and protect its credentials.
-
-```powershell
-docker compose --profile docker-workers build cognis-worker-image cognis-api-with-docker-workers
-docker compose --profile docker-workers up cognis-api-with-docker-workers
-```
-
-The default API service does not mount the Docker socket. Docker Desktop on Windows may not support mounting a host socket the same way as Linux; use a reachable Docker Engine endpoint or run the worker backend on a dedicated Linux host. Do not expose an unauthenticated remote Docker TCP endpoint.
-
-Example request:
-
-```json
-{
-  "agent_id": "demo",
-  "suite": "container-refund-check",
-  "timeout_seconds": 15,
-  "memory_limit_mb": 512,
-  "cpu_limit": 1.0,
-  "pids_limit": 64,
-  "network_enabled": false,
-  "cases": [
-    {
-      "case_id": "cancelled-refund",
-      "input": "Order cancelled; customer requests refund",
-      "expected_output": "refund_eligible",
-      "tags": ["correctness"]
-    }
-  ]
-}
-```
-
-The Docker backend materially improves isolation, but **a container alone is not a complete security guarantee for arbitrary hostile code**. Use a dedicated host/daemon, patch the host kernel and Docker Engine, enforce host-level resource quotas, keep network disabled unless required, and use synthetic secrets only in security tests. OpenRouter workers need outbound network access, so setting `network_enabled: true` weakens network isolation and should be allowed only for trusted provider adapters. Worker containers receive only the OpenRouter environment variables needed by that adapter.
-
-
-```json
-{
-  "agent_id": "demo",
-  "suite": "isolated-refund-check",
-  "timeout_seconds": 10,
-  "memory_limit_mb": 512,
-  "cases": [
-    {
-      "case_id": "cancelled-refund",
-      "input": "Order cancelled; customer requests refund",
-      "expected_output": "refund_eligible",
-      "tags": ["correctness"]
-    }
-  ]
-}
-```
-
-The worker uses a JSON request/response protocol, a bounded wall-clock timeout, a restricted inherited environment, output-size checks, and POSIX address-space/file-descriptor/core-dump limits where supported. These measures improve crash and timeout containment. **This subprocess backend does not enforce network isolation or filesystem read-only mode and is not a security sandbox for hostile code.** The `network_enabled` and `filesystem_read_only` policy fields are intent only here. Do not run untrusted agent code. A real multi-user production worker needs container/VM isolation with OS-enforced network policy, read-only mounts, non-root identity, seccomp/AppArmor, cgroup limits, ephemeral credentials, and cleanup.
-
-## Use the engine from Python
-
-Trusted agents can be tested without going through the HTTP endpoint:
-
-```python
-from app.engine.evaluator import run_evaluation
-from app.engine.scenarios import EvaluationCase, EvaluationScenario
-
-scenario = EvaluationScenario(
-    name="example",
-    cases=(
-        EvaluationCase(
-            case_id="basic-response",
-            input="Say exactly READY",
-            expected_output="READY",
-            tags=("correctness",),
-        ),
-    ),
-)
-
-# result = run_evaluation(your_trusted_agent, scenario)
-```
-
-Adapters should normalize the target framework's output and preserve relevant tool-call metadata where available. The current HTTP custom-evaluation endpoint targets the configured OpenRouter model; it does not accept arbitrary uploaded Python code or automatically connect to every agent framework.
-
-## Security model and production limitations
-
-**Do not treat this repository as a finished, publicly deployable multi-tenant production SaaS.** This hardening pass adds bounded custom evaluation, optional API authentication, and SQLite-backed history for a single instance, but it does not provide all controls required for a public service.
-
-- The runner executes trusted agent code in-process. Async/thread timeouts do not safely terminate hostile code. Never submit untrusted code; use disposable, resource-limited isolated workers before adding that capability.
-- Tenant identities are mapped from bearer credentials configured by the operator; the caller cannot choose a tenant ID in request data. The simple environment mapping is a portfolio/demo credential registry, not a self-service key-management system. Use a proper secrets manager, key rotation, rate limiting, audit trails, and a security review before operating this as a public SaaS.
-- SQLite evaluation history is persisted for a single instance. There are no durable worker queues, distributed rate limits/quotas, cancellation, tenant-aware storage, or regression dashboard. SQLite is not a substitute for PostgreSQL in a horizontally scaled multi-tenant deployment.
-- The secret-pattern check is heuristic, and the prompt-injection/canary scenarios are baseline regressions, not comprehensive security assessments. Use synthetic canaries only, and design tests for the agent's actual threat model.
-- The current OpenRouter adapter supports single-turn text chat. Tool calls, agent traces, multimodal inputs, provider cost/token telemetry, and framework-specific execution are not fully implemented.
-- Before public production use, add isolated workers, identity and tenant boundaries, durable storage/queueing, rate limits, audit logging and secret redaction, robust telemetry, dependency/security scanning, load tests, deployment secrets management, and a security review.
-
-## Tests
+## Run the tests
 
 ```powershell
 python -m pytest -q
 ```
 
-CI uses mocked provider calls and does not require an OpenRouter key. Live smoke/custom evaluations do require valid provider configuration.
+The test suite covers the deterministic demo/report, API behavior, storage, and tenant-scoped history. GitHub Actions also builds the API and worker Docker images and smoke-tests the worker protocol. Check the pull request's Actions checks for the authoritative result; a local run is not claimed unless it was actually executed.
+
+## Architecture at a glance
+
+```text
+Test scenario (cases, expectations, tags)
+                  |
+                  v
+       Agent execution adapter
+                  |
+                  v
+       Output normalization
+                  |
+                  v
+       Deterministic assertions
+       - expected output
+       - required / forbidden text
+       - latency budget
+       - obvious secret-like output
+                  |
+                  v
+       Per-case results + metrics
+                  |
+          +-------+-------+
+          |               |
+          v               v
+      JSON result     Markdown report
+          |
+          v
+   Optional API persistence
+   SQLite (local) / PostgreSQL
+   Tenant-scoped evaluation history
+```
+
+Key code paths:
+- `app/engine/scenarios.py` — reusable scenario and case definitions.
+- `app/engine/runner.py` — sync/async invocation adapter and timeout handling.
+- `app/engine/assertions.py` — deterministic output assertions.
+- `app/engine/evaluator.py` — runs cases and computes evaluation metrics.
+- `app/observability/telemetry.py` — latency and reliability aggregates.
+- `examples/sample_agent.py` — sample agent; `scripts/run_demo.py` — recruiter scenario and report generator.
+- `app/main.py` — FastAPI endpoints and authentication.
+- `app/storage/evaluations.py` — SQLite/PostgreSQL persistence and tenant-scoped history queries.
+
+## API and optional integrations
+
+Run the API locally:
+
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+Open `http://127.0.0.1:8000/docs`. The deterministic API demo is `POST /evaluations` with:
+
+```json
+{"suite":"demo","include_traces":true}
+```
+
+Completed runs can be listed with `GET /evaluations/history` and retrieved with `GET /evaluations/history/{evaluation_id}`. Protected endpoints accept a bearer token. In local development, authentication is permissive when no key configuration is set; do not expose that configuration to an untrusted network.
+
+For multiple demo tenants, set `COGNIS_API_KEYS_JSON` to a JSON mapping of distinct high-entropy bearer tokens to tenant IDs, for example:
+
+```json
+{"replace-with-random-key-for-a":"customer-a","replace-with-random-key-for-b":"customer-b"}
+```
+
+Keep real keys in environment configuration or a secret manager, never in Git. The API derives tenant identity from the configured token mapping; callers cannot select their own tenant through a request field. The current mapping is an operator-managed environment configuration, **not** a complete tenant onboarding or API-key lifecycle system.
+
+### PostgreSQL
+
+The API accepts `COGNIS_DATABASE_URL`, for example `postgresql://cognis:password@localhost:5432/cognis`. The Compose file contains an opt-in PostgreSQL service; set `POSTGRES_PASSWORD` and configure `COGNIS_DATABASE_URL` to point to the Compose hostname `postgres` when running the API and database together. SQLite remains the zero-setup local default. Review the Compose profiles and environment values before deployment.
+
+### Live model provider
+
+The OpenRouter adapter can run a live smoke test using `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`. Provider tests may incur charges and depend on network/provider availability. The recruiter demo does not call a hosted model.
+
+## Security and limitations
+
+Cognis provides useful **regression signals**, not proof of correctness or security:
+
+- The included sample agent is deterministic Python logic, not an LLM; its tests prove the evaluation pipeline works on known examples, not that a general-purpose model is safe.
+- The six demo cases are small and hand-written. They are not a statistically representative benchmark.
+- Prompt-injection and synthetic-canary tests cover only their stated fixtures. Passing them does not establish resistance to broader prompt injection or data exfiltration.
+- The obvious-secret check is heuristic and can miss leaks or flag harmless text.
+- Latency values are local measurements, not production capacity guarantees.
+- The in-process execution runner's timeout is not a sandbox. Use the isolated worker path for supported untrusted-agent execution and review its threat model before deployment.
+- Tenant scoping in application queries is not a substitute for a full SaaS identity lifecycle, key rotation/revocation, database-level row security, audit logging, rate limiting, and a production security review.
+- PostgreSQL support and tenant isolation should be validated by CI and tested in the target deployment configuration before relying on them operationally.
+
+## Project status
+
+This is an actively developed portfolio project focused on agent evaluation, reproducible testing, observability, worker isolation, and tenant-aware persistence. See the code, tests, CI results, and generated report to verify the implemented behavior rather than relying on claims in this document.
