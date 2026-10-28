@@ -75,6 +75,18 @@ app = FastAPI(
 )
 
 
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Set conservative browser-facing headers for API and Swagger responses."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Cache-Control", "no-store")
+    response.headers.setdefault("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+    return response
+
+
 class TaskRequest(BaseModel):
     task: str = Field(min_length=1, max_length=1000)
 
