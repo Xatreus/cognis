@@ -1,19 +1,55 @@
 name: CI
+
 on:
   push:
-    branches: [main, cognis-isolated-worker, cognis-docker-worker]
+    branches: [main, production-hardening]
   pull_request:
     branches: [main]
+
 permissions:
   contents: read
+
 jobs:
-  test:
+  test-and-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
           cache: pip
-      - run: python -m pip install -r requirements.txt
-      - run: python -m pytest -q
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run unit and API tests
+        run: python -m pytest -q
+
+      - name: Build API image
+        run: docker build --pull -t cognis-api:ci -f Dockerfile .
+
+      - name: Build worker image
+        run: docker build --pull -t cognis-agent-worker:ci -f Dockerfile.worker .
+
+      - name: Smoke-test isolated worker protocol
+        shell: bash
+        run: |
+          set -euo pipefail
+          response="$(
+            printf '%s\n' '{"protocol_version":1,"agent_id":"demo","input":"Order cancelled; customer requests refund"}' |
+            docker run --rm -i \
+              --network none \
+              --read-only \
+              --cap-drop ALL \
+              --security-opt no-new-privileges \
+              --pids-limit 64 \
+              --memory 512m \
+              --cpus 1 \
+              --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m \
+              cognis-agent-worker:ci
+          )"
+          echo "$response"
+          echo "$response" | grep -F '"ok":true'
+          echo "$response" | grep -F '"output":"refund_eligible"'
