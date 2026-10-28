@@ -39,7 +39,7 @@ COGNIS_ENV = os.getenv("COGNIS_ENV", "development").strip().lower()
 
 # Fail closed in production rather than silently running protected endpoints
 # without authentication when a deployment secret was omitted.
-if COGNIS_ENV == "production" and len(API_KEY) < 32:
+if COGNIS_ENV == "production" and len(API_KEY) < 32 and not os.getenv("COGNIS_API_KEYS_JSON", "").strip():
     raise RuntimeError(
         "Production requires COGNIS_API_KEY with at least 32 characters."
     )
@@ -53,10 +53,10 @@ async def lifespan(app: FastAPI):
     logger.info("Cognis API stopping")
 
 
-def persist_evaluation(result: EvaluationResponse) -> EvaluationResponse:
+def persist_evaluation(result: EvaluationResponse, tenant_id: str) -> EvaluationResponse:
     """Persist a completed result before returning it to the caller."""
     try:
-        save_evaluation(result)
+        save_evaluation(result, tenant_id=tenant_id)
     except Exception as exc:
         logger.exception("Could not persist evaluation result")
         raise HTTPException(status_code=503, detail="Evaluation completed but could not be stored") from exc
@@ -171,18 +171,39 @@ class CustomEvaluationRequest(BaseModel):
         return self
 
 
-async def require_api_key(authorization: str | None = Header(default=None)):
-    """Bearer-token gate; read the secret at request time for safe rotation and tests."""
-    configured_key = os.getenv("COGNIS_API_KEY", "").strip()
-    if not configured_key:
-        # Local development is intentionally permissive; production startup fails closed.
+async def require_api_key(authorization: str | None = Header(default=None)) -> str:
+    """Authenticate a bearer token and return its server-configured tenant identity."""
+    import json
+    configured: dict[str, str] = {}
+    raw_map = os.getenv("COGNIS_API_KEYS_JSON", "").strip()
+    if raw_map:
+        try:
+            parsed = json.loads(raw_map)
+            if not isinstance(parsed, dict) or not all(
+                isinstance(k, str) and k and isinstance(v, str) and v.strip()
+                for k, v in parsed.items()
+            ):
+                raise ValueError("Expected a JSON object mapping API keys to tenant IDs")
+            configured.update({k: v.strip() for k, v in parsed.items()})
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise HTTPException(status_code=503, detail="API key tenant mapping is invalid") from exc
+    legacy_key = os.getenv("COGNIS_API_KEY", "").strip()
+    if legacy_key:
+        configured.setdefault(legacy_key, os.getenv("COGNIS_TENANT_ID", "default").strip() or "default")
+    if not configured:
         if COGNIS_ENV == "production":
             raise HTTPException(status_code=503, detail="API authentication is not configured")
-        return
+        return "local"
     scheme, _, supplied = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not supplied or not secrets.compare_digest(supplied, configured_key):
+    if scheme.lower() != "bearer" or not supplied:
         raise HTTPException(status_code=401, detail="Valid bearer token required")
-
+    matched_tenant = None
+    for token, candidate_tenant in configured.items():
+        if secrets.compare_digest(supplied, token):
+            matched_tenant = candidate_tenant
+    if matched_tenant is None:
+        raise HTTPException(status_code=401, detail="Valid bearer token required")
+    return matched_tenant
 
 @app.get("/health/live", tags=["health"])
 def liveness():
@@ -199,22 +220,22 @@ def health_check():
     return {"status": "ok"}
 
 
-@app.post("/tasks", tags=["tasks"], dependencies=[Depends(require_api_key)])
-def create_task(request: TaskRequest):
+@app.post("/tasks", tags=["tasks"])
+def create_task(request: TaskRequest, tenant_id: str = Depends(require_api_key)):
     return create_task_service(request.task)
 
 
-@app.post("/evaluations", response_model=EvaluationResponse, tags=["evaluations"], dependencies=[Depends(require_api_key)])
-def create_evaluation(request: EvaluationRequest):
+@app.post("/evaluations", response_model=EvaluationResponse, tags=["evaluations"])
+def create_evaluation(request: EvaluationRequest, tenant_id: str = Depends(require_api_key)):
     try:
-        return persist_evaluation(run_demo_evaluation(include_traces=request.include_traces))
+        return persist_evaluation(run_demo_evaluation(include_traces=request.include_traces), tenant_id)
     except Exception as exc:
         logger.exception("Demo evaluation execution failed")
         raise HTTPException(status_code=500, detail="Evaluation execution failed") from exc
 
 
-@app.post("/evaluations/custom", response_model=EvaluationResponse, tags=["evaluations"], dependencies=[Depends(require_api_key)])
-async def create_custom_evaluation(request: CustomEvaluationRequest):
+@app.post("/evaluations/custom", response_model=EvaluationResponse, tags=["evaluations"])
+async def create_custom_evaluation(request: CustomEvaluationRequest, tenant_id: str = Depends(require_api_key)):
     """Evaluate a configured agent against caller-defined test cases.
 
     The current HTTP endpoint evaluates the configured OpenRouter model. Arbitrary
@@ -245,7 +266,7 @@ async def create_custom_evaluation(request: CustomEvaluationRequest):
             agent, scenario, include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds,
         )
-        return persist_evaluation(result)
+        return persist_evaluation(result, tenant_id)
     except Exception as exc:
         logger.exception("Custom evaluation failed")
         raise HTTPException(status_code=500, detail="Custom evaluation failed") from exc
@@ -256,9 +277,8 @@ async def create_custom_evaluation(request: CustomEvaluationRequest):
     response_model=EvaluationResponse,
     tags=["evaluations"],
     summary="Evaluate a registered agent in a child process",
-    dependencies=[Depends(require_api_key)],
 )
-async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
+async def create_isolated_evaluation(request: IsolatedEvaluationRequest, tenant_id: str = Depends(require_api_key)):
     """Run only a built-in registered adapter in a fresh subprocess per case.
 
     This is stronger fault containment than in-process invocation, but is not a
@@ -301,7 +321,7 @@ async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
             include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds + 3,
         )
-        return persist_evaluation(result)
+        return persist_evaluation(result, tenant_id)
     except Exception as exc:
         logger.exception("Isolated evaluation failed")
         raise HTTPException(status_code=502, detail="Isolated evaluation failed") from exc
@@ -312,9 +332,8 @@ async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
     response_model=EvaluationResponse,
     tags=["evaluations"],
     summary="Evaluate a registered agent in a disposable Docker container",
-    dependencies=[Depends(require_api_key)],
 )
-async def create_container_evaluation(request: ContainerEvaluationRequest):
+async def create_container_evaluation(request: ContainerEvaluationRequest, tenant_id: str = Depends(require_api_key)):
     """Run each case in a disposable, resource-limited Docker container.
 
     Docker daemon access is highly privileged. Keep this API private and connect
@@ -362,7 +381,7 @@ async def create_container_evaluation(request: ContainerEvaluationRequest):
             include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds + 10,
         )
-        return persist_evaluation(result)
+        return persist_evaluation(result, tenant_id)
     except Exception as exc:
         logger.exception("Container evaluation failed")
         raise HTTPException(status_code=502, detail="Container evaluation failed") from exc
@@ -373,15 +392,14 @@ async def create_container_evaluation(request: ContainerEvaluationRequest):
     response_model=EvaluationResponse,
     tags=["evaluations"],
     summary="Run a live OpenRouter connectivity smoke test",
-    dependencies=[Depends(require_api_key)],
 )
-def create_openrouter_evaluation(request: OpenRouterEvaluationRequest):
+def create_openrouter_evaluation(request: OpenRouterEvaluationRequest, tenant_id: str = Depends(require_api_key)):
     try:
         agent = OpenRouterAgent()
     except OpenRouterConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
-        return persist_evaluation(run_evaluation(agent, OPENROUTER_SMOKE_SCENARIO, include_traces=request.include_traces))
+        return persist_evaluation(run_evaluation(agent, OPENROUTER_SMOKE_SCENARIO, include_traces=request.include_traces), tenant_id)
     except Exception as exc:
         logger.exception("OpenRouter evaluation failed")
         raise HTTPException(status_code=502, detail="OpenRouter evaluation failed") from exc
@@ -392,22 +410,20 @@ def create_openrouter_evaluation(request: OpenRouterEvaluationRequest):
     "/evaluations/history",
     tags=["evaluations"],
     summary="List persisted evaluation runs",
-    dependencies=[Depends(require_api_key)],
 )
-def evaluation_history(limit: int = 20, offset: int = 0):
+def evaluation_history(limit: int = 20, offset: int = 0, tenant_id: str = Depends(require_api_key)):
     if not 1 <= limit <= 100 or offset < 0:
         raise HTTPException(status_code=422, detail="limit must be 1..100 and offset must be non-negative")
-    return list_evaluations(limit=limit, offset=offset)
+    return list_evaluations(limit=limit, offset=offset, tenant_id=tenant_id)
 
 
 @app.get(
     "/evaluations/history/{evaluation_id}",
     tags=["evaluations"],
     summary="Retrieve a persisted evaluation run",
-    dependencies=[Depends(require_api_key)],
 )
-def evaluation_history_detail(evaluation_id: str):
-    record = get_evaluation(evaluation_id)
+def evaluation_history_detail(evaluation_id: str, tenant_id: str = Depends(require_api_key)):
+    record = get_evaluation(evaluation_id, tenant_id=tenant_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Evaluation not found")
     return record
