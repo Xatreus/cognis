@@ -34,7 +34,7 @@ python -m uvicorn app.main:app --reload
 
 Open `http://127.0.0.1:8000/docs`.
 
-If `COGNIS_API_KEY` is configured, protected endpoints require `Authorization: Bearer <your-key>`. Health endpoints remain unauthenticated for liveness/readiness probes. Do not paste secrets into issues, source code, test fixtures, or logs.
+If `COGNIS_API_KEY` is configured, protected endpoints require `Authorization: Bearer <your-key>`. Health endpoints remain unauthenticated for liveness/readiness probes. Do not paste secrets into issues, source code, test fixtures, or logs. For deployed environments, set `COGNIS_ENV=production` and configure a randomly generated `COGNIS_API_KEY` of at least 32 characters. In production mode the API refuses to start if that key is missing or too short, rather than silently disabling authentication. Keep `COGNIS_ENV=development` for local work.
 
 ## Endpoints
 
