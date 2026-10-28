@@ -34,6 +34,14 @@ MAX_CASES_PER_REQUEST = int(os.getenv("COGNIS_MAX_CASES_PER_REQUEST", "50"))
 MAX_INPUT_CHARS = int(os.getenv("COGNIS_MAX_INPUT_CHARS", "12000"))
 MAX_TIMEOUT_SECONDS = float(os.getenv("COGNIS_MAX_TIMEOUT_SECONDS", "60"))
 API_KEY = os.getenv("COGNIS_API_KEY", "").strip()
+COGNIS_ENV = os.getenv("COGNIS_ENV", "development").strip().lower()
+
+# Fail closed in production rather than silently running protected endpoints
+# without authentication when a deployment secret was omitted.
+if COGNIS_ENV == "production" and len(API_KEY) < 32:
+    raise RuntimeError(
+        "Production requires COGNIS_API_KEY with at least 32 characters."
+    )
 
 
 @asynccontextmanager
