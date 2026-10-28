@@ -26,6 +26,7 @@ from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.logging import configure_logging
 from app.schemas.evaluations import EvaluationRequest, EvaluationResponse
 from app.services.task_service import create_task as create_task_service
+from app.storage.evaluations import get_evaluation, initialize_store, list_evaluations, save_evaluation
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -46,9 +47,20 @@ if COGNIS_ENV == "production" and len(API_KEY) < 32:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    initialize_store()
     logger.info("Cognis API starting")
     yield
     logger.info("Cognis API stopping")
+
+
+def persist_evaluation(result: EvaluationResponse) -> EvaluationResponse:
+    """Persist a completed result before returning it to the caller."""
+    try:
+        save_evaluation(result)
+    except Exception as exc:
+        logger.exception("Could not persist evaluation result")
+        raise HTTPException(status_code=503, detail="Evaluation completed but could not be stored") from exc
+    return result
 
 
 app = FastAPI(
@@ -179,7 +191,7 @@ def create_task(request: TaskRequest):
 @app.post("/evaluations", response_model=EvaluationResponse, tags=["evaluations"], dependencies=[Depends(require_api_key)])
 def create_evaluation(request: EvaluationRequest):
     try:
-        return run_demo_evaluation(include_traces=request.include_traces)
+        return persist_evaluation(run_demo_evaluation(include_traces=request.include_traces))
     except Exception as exc:
         logger.exception("Demo evaluation execution failed")
         raise HTTPException(status_code=500, detail="Evaluation execution failed") from exc
@@ -213,10 +225,11 @@ async def create_custom_evaluation(request: CustomEvaluationRequest):
     try:
         # Each invocation has its own timeout; case count and input size are bounded.
         from app.engine.evaluator import run_evaluation_async
-        return await run_evaluation_async(
+        result = await run_evaluation_async(
             agent, scenario, include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds,
         )
+        return persist_evaluation(result)
     except Exception as exc:
         logger.exception("Custom evaluation failed")
         raise HTTPException(status_code=500, detail="Custom evaluation failed") from exc
@@ -267,11 +280,12 @@ async def create_isolated_evaluation(request: IsolatedEvaluationRequest):
                 raise AgentExecutionError(str(exc)) from exc
 
     try:
-        return await run_evaluation_async(
+        result = await run_evaluation_async(
             RegisteredWorker(), scenario,
             include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds + 3,
         )
+        return persist_evaluation(result)
     except Exception as exc:
         logger.exception("Isolated evaluation failed")
         raise HTTPException(status_code=502, detail="Isolated evaluation failed") from exc
@@ -326,12 +340,13 @@ async def create_container_evaluation(request: ContainerEvaluationRequest):
                 raise AgentExecutionError(str(exc)) from exc
 
     try:
-        return await run_evaluation_async(
+        result = await run_evaluation_async(
             ContainerRegisteredWorker(),
             scenario,
             include_traces=request.include_traces,
             timeout_seconds=request.timeout_seconds + 10,
         )
+        return persist_evaluation(result)
     except Exception as exc:
         logger.exception("Container evaluation failed")
         raise HTTPException(status_code=502, detail="Container evaluation failed") from exc
@@ -350,10 +365,36 @@ def create_openrouter_evaluation(request: OpenRouterEvaluationRequest):
     except OpenRouterConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     try:
-        return run_evaluation(agent, OPENROUTER_SMOKE_SCENARIO, include_traces=request.include_traces)
+        return persist_evaluation(run_evaluation(agent, OPENROUTER_SMOKE_SCENARIO, include_traces=request.include_traces))
     except Exception as exc:
         logger.exception("OpenRouter evaluation failed")
         raise HTTPException(status_code=502, detail="OpenRouter evaluation failed") from exc
+
+
+
+@app.get(
+    "/evaluations/history",
+    tags=["evaluations"],
+    summary="List persisted evaluation runs",
+    dependencies=[Depends(require_api_key)],
+)
+def evaluation_history(limit: int = 20, offset: int = 0):
+    if not 1 <= limit <= 100 or offset < 0:
+        raise HTTPException(status_code=422, detail="limit must be 1..100 and offset must be non-negative")
+    return list_evaluations(limit=limit, offset=offset)
+
+
+@app.get(
+    "/evaluations/history/{evaluation_id}",
+    tags=["evaluations"],
+    summary="Retrieve a persisted evaluation run",
+    dependencies=[Depends(require_api_key)],
+)
+def evaluation_history_detail(evaluation_id: str):
+    record = get_evaluation(evaluation_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Evaluation not found")
+    return record
 
 
 @app.get("/", include_in_schema=False)
