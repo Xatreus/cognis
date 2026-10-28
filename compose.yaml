@@ -20,7 +20,8 @@ services:
       - "8000:8000"
     environment:
       COGNIS_LOG_LEVEL: INFO
-      COGNIS_DATABASE_URL: ${COGNIS_DATABASE_URL:-}\n      COGNIS_DATABASE_PATH: /data/cognis.db
+      COGNIS_DATABASE_URL: ${COGNIS_DATABASE_URL:-}
+      COGNIS_DATABASE_PATH: /data/cognis.db
       COGNIS_CONTAINER_WORKER_IMAGE: cognis-agent-worker:latest
     volumes:
       - cognis-data:/data
