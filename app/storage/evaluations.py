@@ -53,10 +53,7 @@ def initialize_store() -> None:
                     payload JSONB NOT NULL
                 )
             """)
-            try:
-                conn.execute("ALTER TABLE evaluation_runs ADD COLUMN tenant_id TEXT NOT NULL DEFAULT 'legacy'")
-            except Exception:
-                pass  # Column already exists; keep startup idempotent.
+            conn.execute("ALTER TABLE evaluation_runs ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'legacy'")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_evaluation_runs_tenant_created ON evaluation_runs(tenant_id, created_at DESC)")
         else:
             conn.execute("""
