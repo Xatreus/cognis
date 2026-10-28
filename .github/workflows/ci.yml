@@ -27,6 +27,17 @@ jobs:
       - name: Run unit and API tests
         run: python -m pytest -q
 
+      - name: Run reproducible recruiter demo and generate report
+        run: python -m examples.run_demo --output reports/demo-report.md --json-output reports/demo-report.json
+
+      - name: Upload demo reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: cognis-demo-report
+          path: |
+            reports/demo-report.md
+            reports/demo-report.json
+
       - name: Build API image
         run: docker build --pull -t cognis-api:ci -f Dockerfile .
 
