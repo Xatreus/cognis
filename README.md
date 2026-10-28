@@ -109,6 +109,18 @@ Key code paths:
 - `app/main.py` — FastAPI endpoints and authentication.
 - `app/storage/evaluations.py` — SQLite/PostgreSQL persistence and tenant-scoped history queries.
 
+## Evaluation dashboard
+
+Start the API locally and open the browser dashboard:
+
+```powershell
+python -m uvicorn app.main:app --reload
+```
+
+Open `http://127.0.0.1:8000/dashboard`. The dashboard uses the real Cognis API and tenant-scoped persisted history. From it you can run the deterministic demo suite, inspect each case's expected and actual output, review assertion failures and latency metrics, and browse previous runs. It does not require a hosted model key. If the API has bearer-token authentication configured, the dashboard prompts for a token when the API returns an authentication error; the token stays in the current browser session.
+
+Dashboard assets are served by FastAPI from `app/static/`; no separate frontend build or Node installation is needed. The dashboard is an operator/developer console, not a complete multi-user SaaS frontend.
+
 ## API and optional integrations
 
 Run the API locally:
