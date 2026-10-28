@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#10131b"><title>Cognis — Evaluation Console</title>
+  <link rel="stylesheet" href="/static/dashboard.css">
+  <script defer src="/static/dashboard.js"></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="/dashboard"><span class="brand-mark">C</span><span>cognis<small>AGENT EVALUATION</small></span></a>
+    <div class="nav-label">WORKSPACE</div>
+    <button class="nav active" data-view="overview"><span>▦</span> Overview</button>
+    <button class="nav" data-view="history"><span>◷</span> Evaluation history</button>
+    <div class="sidebar-bottom"><span class="pulse"></span><span>API connection</span><b id="connection-label">Checking</b></div>
+  </aside>
+  <main class="main">
+    <header class="topbar"><div><div class="eyebrow">AGENT QUALITY PLATFORM</div><h1 id="page-title">Evaluation overview</h1></div><div class="top-actions"><button class="button secondary" id="refresh-btn">↻ Refresh</button><button class="button primary" id="run-btn">▶ Run evaluation</button></div></header>
+    <section class="notice" id="notice" role="status" hidden></section>
+    <section id="overview-view">
+      <div class="hero"><div><div class="eyebrow light">REPRODUCIBLE · NO API KEY REQUIRED</div><h2>Know when your agent<br>gets it wrong.</h2><p>Run deterministic checks, inspect failures, and track reliability over time.</p><button class="button hero-button" id="hero-run-btn">Run demo suite <span>→</span></button></div><div class="hero-graphic" aria-hidden="true"><div class="orbit orbit-one"></div><div class="orbit orbit-two"></div><div class="core">C</div><span class="node node-a">PASS</span><span class="node node-b">TEST</span><span class="node node-c">TRACE</span></div></div>
+      <div class="section-head"><div><h2>Performance snapshot</h2><p>Calculated from saved evaluation runs for your authenticated tenant.</p></div><span class="tag" id="snapshot-label">LIVE DATA</span></div>
+      <div class="stats"><article class="stat"><div class="stat-top"><span>Total evaluations</span><span class="stat-icon">▤</span></div><strong id="stat-total">—</strong><small>Saved runs</small></article><article class="stat"><div class="stat-top"><span>Average pass rate</span><span class="stat-icon green">↗</span></div><strong id="stat-pass">—</strong><small>Across saved runs</small></article><article class="stat"><div class="stat-top"><span>Failed cases</span><span class="stat-icon red">!</span></div><strong id="stat-failed">—</strong><small>Across saved runs</small></article><article class="stat"><div class="stat-top"><span>Latest latency</span><span class="stat-icon purple">◷</span></div><strong id="stat-latency">—</strong><small>Mean duration</small></article></div>
+      <div class="content-grid"><section class="panel"><div class="panel-head"><div><h3>Recent evaluations</h3><p>Latest persisted runs</p></div><button class="text-button" data-view="history">View all →</button></div><div id="recent-list" class="run-list"><div class="empty">Loading evaluation history…</div></div></section><section class="panel suite-panel"><div class="panel-head"><div><h3>Demo test suite</h3><p>Six deterministic cases</p></div><span class="tag green-tag">READY</span></div><div class="suite-row"><span class="case-icon">✓</span><div><b>Output correctness</b><small>3 routing assertions</small></div></div><div class="suite-row"><span class="case-icon">⌁</span><div><b>Input robustness</b><small>1 validation case</small></div></div><div class="suite-row"><span class="case-icon shield">◇</span><div><b>Security regressions</b><small>2 prompt-safety fixtures</small></div></div><div class="suite-foot">Runs locally without a hosted model key.</div></section></div>
+      <section class="panel detail-panel" id="detail-panel" hidden><div class="panel-head"><div><h3 id="detail-title">Evaluation details</h3><p id="detail-subtitle"></p></div><button class="button secondary small" id="close-detail">Close</button></div><div id="detail-content"></div></section>
+    </section>
+    <section id="history-view" hidden><div class="section-head"><div><h2>Evaluation history</h2><p>Runs are scoped to the tenant associated with your API key.</p></div><button class="button secondary" id="history-refresh">↻ Reload history</button></div><section class="panel"><div id="history-list" class="table-wrap"><div class="empty">Loading…</div></div></section></section>
+    <footer><span>COGNIS EVALUATION CONSOLE</span><span>Regression signals, not a security certification.</span></footer>
+  </main>
+  <dialog id="token-dialog"><form method="dialog" id="token-form"><div class="eyebrow">CONNECTION SETTINGS</div><h2>Connect to Cognis API</h2><p>In local development, leave the token empty if the API has no authentication key configured. Otherwise paste your bearer token. It is stored in this browser session only.</p><label for="api-token">Bearer token</label><input id="api-token" type="password" autocomplete="off" placeholder="Paste API token (optional in local dev)"><div class="dialog-actions"><button class="button secondary" value="cancel">Cancel</button><button class="button primary" id="save-token" value="default">Connect</button></div></form></dialog>
+</body></html>
