@@ -52,6 +52,7 @@ def initialize_store() -> None:
 
 def save_evaluation(result: Any) -> dict[str, Any]:
     """Persist a validated Pydantic evaluation response and return its metadata."""
+    initialize_store()
     payload = result.model_dump(mode="json")
     created_at = datetime.now(timezone.utc).isoformat()
     with _connect() as conn:
@@ -75,6 +76,7 @@ def save_evaluation(result: Any) -> dict[str, Any]:
 
 
 def list_evaluations(limit: int = 20, offset: int = 0) -> dict[str, Any]:
+    initialize_store()
     with _connect() as conn:
         total = conn.execute("SELECT COUNT(*) FROM evaluation_runs").fetchone()[0]
         rows = conn.execute(
@@ -89,6 +91,7 @@ def list_evaluations(limit: int = 20, offset: int = 0) -> dict[str, Any]:
 
 
 def get_evaluation(evaluation_id: str) -> dict[str, Any] | None:
+    initialize_store()
     with _connect() as conn:
         row = conn.execute(
             "SELECT payload, created_at FROM evaluation_runs WHERE evaluation_id = ?",
