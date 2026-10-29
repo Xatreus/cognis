@@ -25,27 +25,31 @@ def test_http_agent_allows_localhost_only_when_explicitly_enabled():
 
 
 def test_openai_compatible_adapter_sends_byok_key_and_parses_output():
-    seen = {}
-    async def handler(request):
-        seen["authorization"] = request.headers["authorization"]
-        seen["body"] = await request.aread()
-        return httpx.Response(200, json={"choices":[{"message":{"content":"  hello  "}}]})
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        target = OpenAICompatibleTarget(api_key="test-secret", model="test-model",
-            base_url="https://api.example.com/v1", client=client)
-        assert asyncio.run(target.ainvoke("hi")) == "hello"
-    assert seen["authorization"] == "Bearer test-secret"
-    assert b"test-secret" not in seen["body"]
+    async def scenario():
+        seen = {}
+        async def handler(request):
+            seen["authorization"] = request.headers["authorization"]
+            seen["body"] = await request.aread()
+            return httpx.Response(200, json={"choices":[{"message":{"content":"  hello  "}}]})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            target = OpenAICompatibleTarget(api_key="test-secret", model="test-model",
+                base_url="https://api.example.com/v1", client=client)
+            assert await target.ainvoke("hi") == "hello"
+        assert seen["authorization"] == "Bearer test-secret"
+        assert b"test-secret" not in seen["body"]
+    asyncio.run(scenario())
 
 
 def test_http_agent_contract_and_auth_header():
-    seen = {}
-    async def handler(request):
-        seen["authorization"] = request.headers["authorization"]
-        seen["payload"] = await request.aread()
-        return httpx.Response(200, json={"output":"hello"})
-    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-        target = HTTPAgentTarget(endpoint_url="https://agent.example.com/run", auth_token="agent-secret", client=client)
-        assert asyncio.run(target.ainvoke("hi")) == "hello"
-    assert seen["authorization"] == "Bearer agent-secret"
-    assert b"agent-secret" not in seen["payload"]
+    async def scenario():
+        seen = {}
+        async def handler(request):
+            seen["authorization"] = request.headers["authorization"]
+            seen["payload"] = await request.aread()
+            return httpx.Response(200, json={"output":"hello"})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            target = HTTPAgentTarget(endpoint_url="https://agent.example.com/run", auth_token="agent-secret", client=client)
+            assert await target.ainvoke("hi") == "hello"
+        assert seen["authorization"] == "Bearer agent-secret"
+        assert b"agent-secret" not in seen["payload"]
+    asyncio.run(scenario())
