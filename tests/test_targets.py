@@ -24,7 +24,10 @@ def test_http_agent_allows_localhost_only_when_explicitly_enabled():
     assert validate_agent_url("http://127.0.0.1:9000/agent", allow_private=True) == "http://127.0.0.1:9000/agent"
 
 
-def test_openai_compatible_adapter_sends_byok_key_and_parses_output():
+def test_openai_compatible_adapter_sends_byok_key_and_parses_output(monkeypatch):
+    import socket
+    monkeypatch.setattr("app.targets.openai_compatible.socket.getaddrinfo",
+        lambda *args, **kwargs: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))])
     async def scenario():
         seen = {}
         async def handler(request):
