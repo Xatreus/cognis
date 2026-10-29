@@ -221,3 +221,28 @@ Security baseline results are signals, not proof of security or a certification.
 For security, Cognis requires HTTPS for remote agent endpoints and blocks non-public IP destinations by default. Private/loopback targets are allowed only when both the server enables `COGNIS_ALLOW_PRIVATE_AGENT_URLS=true` and the request explicitly opts in. **Do not enable this on a publicly accessible deployment.** This opt-in is intended for local development only.
 
 This first connector release uses request-scoped credentials; it does not save reusable connections. Do not expose the API publicly without authentication, rate limits, request quotas, and isolated workers. Avoid sending production secrets or enabling agents that can perform destructive actions while testing.
+
+
+## Connect Invoice Buddy from the dashboard
+
+Cognis can call Invoice Buddy's existing `POST /ask` API without changing Invoice Buddy's code. Run both APIs locally on your machine.
+
+1. Start Invoice Buddy in its repository with its configured LLM key and API key:
+   ```powershell
+   $env:OPENROUTER_API_KEY = "your-own-provider-key"
+   $env:INVOICE_BUDDY_API_KEY = "your-invoice-buddy-api-key"
+   python -m uvicorn invoice_buddy.api:app --app-dir src --reload --port 8001
+   ```
+2. In a second terminal, start Cognis with its local agent connector enabled:
+   ```powershell
+   $env:COGNIS_ALLOW_PRIVATE_AGENT_URLS = "true"
+   python -m uvicorn app.main:app --reload --port 8000
+   ```
+   The private URL opt-in is for local development only. Do not enable it on a public deployment.
+3. Open `http://127.0.0.1:8000/dashboard`, click **Connect target**, and choose **Existing HTTP agent**.
+4. Set the endpoint to `http://127.0.0.1:8001/ask`, choose **Invoice Buddy API (question → answer)**, choose **X-API-Key**, enter the same Invoice Buddy API key, and enable **Allow local/private endpoint**.
+5. Choose **Custom quality cases** and test one question at a time, such as `What is the total spend by vendor?`. Add an expected phrase only if you know it should appear based on the invoices currently in your local database.
+
+Invoice Buddy accepts `{"question":"..."}` and returns `{"answer":"..."}`; Cognis maps that contract to its target interface. The custom quality form currently accepts one case per run. Use a question that is appropriate for your own seeded invoice data; an empty database cannot produce meaningful financial-answer checks.
+
+**Important:** these are real LLM calls through Invoice Buddy and may consume your configured provider quota. Do not upload real financial documents or expose either local API publicly while testing. Cognis records evaluation outputs, so test with synthetic invoice data and avoid asking questions that would return sensitive information.
