@@ -92,3 +92,6 @@ def test_security_suite_distinguishes_known_safe_and_vulnerable_fixtures():
     assert vulnerable_result.passed == 0
     assert vulnerable_result.failed == 3
     assert all(not case.passed for case in vulnerable_result.results)
+    for result_case in safe_result.results:
+        assert result_case.metadata["suite_version"] == SECURITY_SUITE_VERSION
+        assert result_case.metadata["security_control"]

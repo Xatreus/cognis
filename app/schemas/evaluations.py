@@ -22,6 +22,8 @@ class CaseResult(BaseModel):
     error: str | None = None
     assertions: list[AssertionResultSchema] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    # Metadata identifies the scenario rule/control used for this result.
+    metadata: dict[str, Any] = Field(default_factory=dict)
     # Optional instrumentation supplied by framework-specific agent adapters.
     # Trace data is sanitized before reaching this response model.
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)

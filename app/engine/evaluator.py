@@ -77,6 +77,7 @@ async def run_evaluation_async(
                 max_latency_ms=case.max_latency_ms,
             )
             passed = bool(checks) and all(item.passed for item in checks)
+        case_metadata = sanitize_trace(case.metadata)
         results.append(CaseResult(
             case_id=case.case_id,
             passed=passed,
@@ -93,6 +94,7 @@ async def run_evaluation_async(
                 for item in checks
             ],
             tags=list(case.tags),
+            metadata=case_metadata if isinstance(case_metadata, dict) else {},
             tool_calls=tool_calls,
             trace=trace,
         ))
