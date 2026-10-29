@@ -15,7 +15,7 @@ class SampleSupportAgent:
     def run(self, prompt: str) -> AgentResult:
         text = prompt.strip().lower()
         if not text:
-            raise ValueError("prompt must not be empty")
+            return AgentResult("error")
         if "refund" in text and "delivered" in text:
             return AgentResult("review_required")
         if "refund" in text and ("cancelled" in text or "canceled" in text):
