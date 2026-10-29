@@ -36,6 +36,12 @@ def _is_postgres(conn) -> bool:
     return not isinstance(conn, sqlite3.Connection)
 
 
+def check_store() -> None:
+    """Raise if the configured persistence backend cannot answer a trivial query."""
+    with closing(_connect()) as conn:
+        conn.execute("SELECT 1").fetchone()
+
+
 def initialize_store() -> None:
     with closing(_connect()) as conn, conn:
         if _is_postgres(conn):
