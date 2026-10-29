@@ -97,3 +97,20 @@ def test_malformed_tool_event_fails_closed_instead_of_crashing_evaluation():
     assert result.status == "failed"
     assert case.tool_call_evidence_available is False
     assert any(a.name == "tool_call_evidence_available" and not a.passed for a in case.assertions)
+
+
+
+def test_nonempty_tool_calls_without_completeness_attestation_fail_closed():
+    class UnattestedAgent:
+        async def ainvoke(self, input_data):
+            return AgentExecution(
+                output="I only looked up the order.",
+                tool_calls=({"name": "lookup_order"},),
+            )
+
+    result = asyncio.run(run_evaluation_async(UnattestedAgent(), _scenario()))
+    case = result.results[0]
+
+    assert result.status == "failed"
+    assert case.tool_call_evidence_available is False
+    assert any(a.name == "tool_call_evidence_available" and not a.passed for a in case.assertions)

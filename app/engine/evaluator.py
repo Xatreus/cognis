@@ -72,10 +72,8 @@ async def run_evaluation_async(
                 and len(sanitized_calls) == len(raw_tool_calls)
                 and all(_tool_name(call) for call in raw_tool_calls)
             )
-            tool_call_evidence_available = (
-                (bool(raw_tool_calls) if evidence_flag is None else bool(evidence_flag))
-                and shape_valid
-            )
+            # Never infer completeness from a non-empty list: adapters must attest it.
+            tool_call_evidence_available = bool(evidence_flag) and shape_valid
             if include_traces:
                 sanitized_trace = sanitize_trace(trace_value)
                 trace = sanitized_trace if isinstance(sanitized_trace, dict) else {}
