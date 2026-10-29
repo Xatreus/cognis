@@ -34,6 +34,14 @@ def test_trace_sanitizer_bounds_depth_items_and_strings():
     assert len(sanitize_trace("x" * 5000)) == 2000
 
 
+def test_trace_sanitizer_enforces_global_node_and_character_budgets():
+    wide_nested = {f"branch-{i}": [{"leaf": "x" * 1000} for _ in range(100)] for i in range(100)}
+    cleaned = sanitize_trace(wide_nested)
+    rendered = str(cleaned)
+    assert "[TRUNCATED]" in rendered or "'_truncated': True" in rendered
+    assert len(rendered) < 300_000
+
+
 def test_tool_call_sanitizer_only_returns_dict_records():
     calls = [{"name": "search", "arguments": {"api_key": "secret"}}, "unsupported"]
     assert sanitize_tool_calls(calls) == [
