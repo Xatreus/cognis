@@ -72,3 +72,40 @@ def test_invoice_buddy_contract_maps_question_to_answer():
             )
             assert await target.ainvoke("What is the total spend?") == "Total spend is 125.00."
     asyncio.run(scenario())
+
+
+
+def test_http_agent_rejects_oversized_upstream_response():
+    async def scenario():
+        async def handler(request):
+            return httpx.Response(200, json={"output": "x" * 1_000_100})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            target = HTTPAgentTarget(
+                endpoint_url="https://localhost/run", allow_private=True, client=client
+            )
+            with pytest.raises(RuntimeError, match="exceeded 1000000 bytes"):
+                await target.ainvoke("test")
+    asyncio.run(scenario())
+
+
+def test_openai_compatible_rejects_oversized_upstream_response(monkeypatch):
+    import socket
+    monkeypatch.setattr(
+        "app.targets.openai_compatible.socket.getaddrinfo",
+        lambda *args, **kwargs: [
+            (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))
+        ],
+    )
+    async def scenario():
+        async def handler(request):
+            return httpx.Response(
+                200, json={"choices": [{"message": {"content": "x" * 1_000_100}}]}
+            )
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            target = OpenAICompatibleTarget(
+                api_key="test-secret", model="test-model",
+                base_url="https://api.example.com/v1", client=client
+            )
+            with pytest.raises(RuntimeError, match="exceeded 1000000 bytes"):
+                await target.ainvoke("test")
+    asyncio.run(scenario())

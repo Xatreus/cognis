@@ -13,6 +13,8 @@ from typing import Any
 
 import httpx
 
+from app.targets.http_utils import post_json_bounded
+
 
 class TargetConfigurationError(ValueError):
     pass
@@ -60,16 +62,18 @@ class OpenAICompatibleTarget:
         payload = {"model": self.model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}
         headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
         try:
+            endpoint = self.base_url + "/chat/completions"
             if self.client:
-                response = await self.client.post(self.base_url + "/chat/completions", json=payload, headers=headers,
-                                                  timeout=self.timeout_seconds, follow_redirects=False)
-                response.raise_for_status()
-                data = response.json()
+                data = await post_json_bounded(
+                    self.client, endpoint, json_body=payload, headers=headers,
+                    timeout_seconds=self.timeout_seconds,
+                )
             else:
                 async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
-                    response = await client.post(self.base_url + "/chat/completions", json=payload, headers=headers)
-                    response.raise_for_status()
-                    data = response.json()
+                    data = await post_json_bounded(
+                        client, endpoint, json_body=payload, headers=headers,
+                        timeout_seconds=self.timeout_seconds,
+                    )
             content = data["choices"][0]["message"]["content"]
             if not isinstance(content, str):
                 raise ValueError("Provider response content was not text.")
