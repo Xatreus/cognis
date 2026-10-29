@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from app.targets.http_utils import post_json_bounded
+
 
 class AgentEndpointError(ValueError):
     pass
@@ -77,15 +79,16 @@ class HTTPAgentTarget:
             payload["metadata"] = {"source": "cognis"}
         try:
             if self.client:
-                response = await self.client.post(self.endpoint_url, json=payload, headers=headers,
-                                                  timeout=self.timeout_seconds, follow_redirects=False)
-                response.raise_for_status()
-                data = response.json()
+                data = await post_json_bounded(
+                    self.client, self.endpoint_url, json_body=payload, headers=headers,
+                    timeout_seconds=self.timeout_seconds,
+                )
             else:
                 async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
-                    response = await client.post(self.endpoint_url, json=payload, headers=headers)
-                    response.raise_for_status()
-                    data = response.json()
+                    data = await post_json_bounded(
+                        client, self.endpoint_url, json_body=payload, headers=headers,
+                        timeout_seconds=self.timeout_seconds,
+                    )
             output = data.get(self.output_field) if isinstance(data, dict) else None
             if not isinstance(output, str):
                 raise RuntimeError("Agent response must be JSON with a string 'output' or 'response' field.")
