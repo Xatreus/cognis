@@ -18,6 +18,9 @@ def test_dashboard_page_and_assets_are_served():
     assert js.status_code == 200
     assert "/evaluations/history" in js.text
     assert "/evaluations" in js.text
+    assert "quality-forbidden-tools" in page.text
+    assert "forbidden_tools" in js.text
+    assert "tool_call_evidence_available" in js.text
 
 
 def test_dashboard_response_has_browser_security_headers():

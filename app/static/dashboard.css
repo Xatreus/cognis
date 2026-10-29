@@ -2,3 +2,5 @@
 .target-dialog{max-width:560px;max-height:90vh;overflow:auto}.target-dialog select,.target-dialog textarea{width:100%;background:#0e121a;border:1px solid var(--line);border-radius:8px;padding:11px;color:var(--text);font:inherit}.target-dialog select{margin-bottom:2px}.target-dialog textarea{resize:vertical}.target-dialog .small-note{font-size:11px}.target-dialog label{margin-top:15px}.target-dialog .dialog-actions{position:sticky;bottom:-25px;background:var(--panel);padding:14px 0 0}
 
 .target-dialog .check-row{display:flex;align-items:center;gap:10px;font-weight:500}.target-dialog .check-row input{width:auto;margin:0}
+
+.trace-json{white-space:pre-wrap;overflow-wrap:anywhere;max-height:280px;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:12px;color:var(--text)}
