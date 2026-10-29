@@ -44,7 +44,8 @@ Case results + run metrics
 - `app/main.py`: FastAPI routes, request validation, authentication, connected-target orchestration, health checks, and persistence calls.
 - `app/engine/scenarios.py`: evaluation case and scenario contracts.
 - `app/engine/runner.py`: invokes trusted adapter interfaces and normalizes outputs.
-- `app/engine/evaluator.py`: executes cases sequentially, applies assertions, and constructs the evaluation result.
+- `app/engine/evaluator.py`: executes cases sequentially, applies assertions, captures optional adapter-provided tool-call/trace metadata, and constructs the evaluation result.
+- `app/observability/trace_sanitizer.py`: applies best-effort credential redaction and size/depth bounds to adapter-provided trace metadata before returning it.
 - `app/engine/assertions.py`: deterministic assertions for correctness and output constraints.
 - `app/engine/security_suite.py`: a small, hand-written security regression suite.
 - `app/targets/http_agent.py`: JSON-over-HTTP agent adapter.
@@ -88,3 +89,10 @@ SQLite is convenient for local use. PostgreSQL is the better starting point for 
 - Metrics include pass/fail counts, pass rate, and latency summaries; token/cost, repeated-trial confidence, and benchmark-calibrated scores are not yet comprehensive.
 - Connected adapters primarily evaluate final text output. Tool-call traces, authorization decisions, side effects, and multi-step agent state are not comprehensively captured.
 - The security suite is small and deterministic. It is a regression signal, not proof that an agent is secure.
+
+
+## Adapter traces and privacy
+
+Framework adapters may return `AgentExecution(output=..., tool_calls=..., trace=...)`. When `include_traces=true`, Cognis includes the adapter-provided tool-call records and trace metadata in each case result after best-effort redaction and bounds. When `include_traces=false`, these metadata fields are omitted from the result.
+
+The sanitizer is not a data-loss-prevention guarantee: arbitrary secrets, personal data, or provider-specific formats may not be recognized. Treat traces and outputs as sensitive customer data. Before offering a hosted multi-tenant service, define retention/deletion controls and access policy, and add provider-specific redaction and tests. The built-in HTTP and OpenAI-compatible adapters currently return text and do not automatically reconstruct hidden tool traces.

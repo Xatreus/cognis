@@ -6,6 +6,7 @@ from app.agents.demo_agent import DemoAgent
 from app.engine.assertions import evaluate_assertions
 from app.engine.runner import AgentExecutionError, normalize_output, run_agent
 from app.engine.scenarios import EvaluationCase, EvaluationScenario
+from app.observability.trace_sanitizer import sanitize_tool_calls, sanitize_trace
 from app.observability.telemetry import summarize_run
 from app.schemas.evaluations import (
     AssertionResultSchema,
@@ -44,12 +45,21 @@ async def run_evaluation_async(
     results: list[CaseResult] = []
     for case in scenario.cases:
         error = None
+        raw = None
+        trace: dict = {}
+        tool_calls: list[dict] = []
         try:
             raw, duration_ms = await run_agent(agent, case.input, timeout_seconds=timeout_seconds)
             actual = normalize_output(raw)
+            if include_traces:
+                trace_value = getattr(raw, "trace", {})
+                tool_call_value = getattr(raw, "tool_calls", ())
+                sanitized_trace = sanitize_trace(trace_value)
+                trace = sanitized_trace if isinstance(sanitized_trace, dict) else {}
+                tool_calls = sanitize_tool_calls(tool_call_value)
         except AgentExecutionError as exc:
             actual = "error"
-            duration_ms = timeout_seconds * 1000 if isinstance(exc, AgentExecutionError) and "timeout" in str(exc).lower() else 0.0
+            duration_ms = timeout_seconds * 1000 if "timeout" in str(exc).lower() else 0.0
             error = str(exc)
 
         # Execution failures must never become PASS just because generic output
@@ -83,6 +93,8 @@ async def run_evaluation_async(
                 for item in checks
             ],
             tags=list(case.tags),
+            tool_calls=tool_calls,
+            trace=trace,
         ))
 
     passed_count = sum(item.passed for item in results)
@@ -102,14 +114,14 @@ async def run_evaluation_async(
 
 
 def run_evaluation(agent, scenario: EvaluationScenario, include_traces: bool = True) -> EvaluationResponse:
-    """Synchronous entry point; use run_evaluation_async inside an event loop."""
+    """Synchronous wrapper for scripts and test suites."""
     try:
         asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(run_evaluation_async(agent, scenario, include_traces))
-    raise RuntimeError("run_evaluation cannot run inside an event loop; await run_evaluation_async instead")
+        return asyncio.run(run_evaluation_async(agent, scenario, include_traces=include_traces))
+    raise RuntimeError("run_evaluation() cannot be called from a running event loop; use run_evaluation_async()")
 
 
 def run_demo_evaluation(include_traces: bool = True) -> EvaluationResponse:
-    """Backward-compatible deterministic demo evaluation."""
+    """Run the built-in deterministic scenario against the bundled demo agent."""
     return run_evaluation(DemoAgent(), DEMO_SCENARIO, include_traces=include_traces)
