@@ -173,6 +173,41 @@ class CustomEvaluationRequest(BaseModel):
         return self
 
 
+class ConnectedEvaluationRequest(BaseModel):
+    """Request-scoped BYOK or HTTP-agent evaluation; credentials are never stored."""
+    model_config = ConfigDict(extra="forbid")
+    target_type: Literal["model", "http_agent"]
+    suite: Literal["quality", "security", "both"] = "both"
+    provider: Literal["openai", "gemini", "openrouter", "openai_compatible"] = "openai"
+    api_key: str | None = Field(default=None, max_length=4096)
+    model: str | None = Field(default=None, max_length=200)
+    base_url: str | None = Field(default=None, max_length=500)
+    endpoint_url: str | None = Field(default=None, max_length=2000)
+    auth_token: str | None = Field(default=None, max_length=4096)
+    allow_private_agent_url: bool = False
+    timeout_seconds: float = Field(default=20, gt=0, le=60)
+    include_traces: bool = True
+    cases: list[CaseRequest] = Field(default_factory=list, max_length=MAX_CASES_PER_REQUEST)
+
+    @model_validator(mode="after")
+    def validate_target(self):
+        if self.target_type == "model":
+            if not self.api_key or not self.model:
+                raise ValueError("model targets require api_key and model")
+            if self.provider == "openai_compatible" and not self.base_url:
+                raise ValueError("openai_compatible targets require base_url")
+        elif not self.endpoint_url:
+            raise ValueError("http_agent targets require endpoint_url")
+        if self.suite == "quality" and not self.cases:
+            raise ValueError("quality suite requires caller-defined cases")
+        if len({case.case_id for case in self.cases}) != len(self.cases):
+            raise ValueError("case_id values must be unique")
+        for case in self.cases:
+            if len(str(case.input)) > MAX_INPUT_CHARS:
+                raise ValueError(f"input for case {case.case_id!r} exceeds {MAX_INPUT_CHARS} characters")
+        return self
+
+
 async def require_api_key(authorization: str | None = Header(default=None)) -> str:
     """Authenticate a bearer token and return its server-configured tenant identity."""
     import json
@@ -429,6 +464,74 @@ def evaluation_history_detail(evaluation_id: str, tenant_id: str = Depends(requi
     if record is None:
         raise HTTPException(status_code=404, detail="Evaluation not found")
     return record
+
+
+@app.post("/evaluations/connected", response_model=EvaluationResponse, tags=["evaluations"],
+          summary="Evaluate a user-supplied model API or existing HTTP agent")
+async def create_connected_evaluation(request: ConnectedEvaluationRequest, tenant_id: str = Depends(require_api_key)):
+    """Run request-scoped BYOK/HTTP targets. Provider credentials are not persisted."""
+    from app.engine.evaluator import DEMO_SCENARIO, run_evaluation_async
+    from app.engine.security_suite import security_scenario
+    from app.targets.http_agent import AgentEndpointError, HTTPAgentTarget
+    from app.targets.openai_compatible import OpenAICompatibleTarget, PROVIDER_PRESETS, TargetConfigurationError
+
+    try:
+        if request.target_type == "model":
+            base_url = request.base_url or PROVIDER_PRESETS[request.provider]
+            target = OpenAICompatibleTarget(
+                api_key=request.api_key or "", model=request.model or "", base_url=base_url,
+                timeout_seconds=request.timeout_seconds,
+            )
+        else:
+            # Private/loopback access is disabled unless explicitly enabled by the server.
+            server_allows_private = os.getenv("COGNIS_ALLOW_PRIVATE_AGENT_URLS", "false").lower() == "true"
+            if request.allow_private_agent_url and not server_allows_private:
+                raise HTTPException(status_code=403, detail="Server policy does not allow private agent URLs.")
+            target = HTTPAgentTarget(
+                endpoint_url=request.endpoint_url or "", auth_token=request.auth_token,
+                timeout_seconds=request.timeout_seconds,
+                allow_private=server_allows_private and request.allow_private_agent_url,
+            )
+    except (TargetConfigurationError, AgentEndpointError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    scenarios = []
+    if request.suite in ("quality", "both"):
+        if request.cases:
+            scenarios.append(EvaluationScenario(
+                name="connected_quality",
+                description="User-defined quality checks",
+                cases=tuple(EvaluationCase(
+                    case_id=case.case_id, input=case.input, expected_output=case.expected_output,
+                    contains=tuple(case.contains), not_contains=tuple(case.not_contains),
+                    max_latency_ms=case.max_latency_ms, tags=tuple(case.tags) or ("quality",),
+                ) for case in request.cases),
+            ))
+        elif request.suite == "both":
+            scenarios.append(DEMO_SCENARIO)
+        else:
+            raise HTTPException(status_code=422, detail="Provide at least one custom case for quality evaluation.")
+    if request.suite in ("security", "both"):
+        scenarios.append(security_scenario())
+
+    # One report contains every selected case, so the caller gets a single run ID.
+    combined = EvaluationScenario(
+        name=f"connected_{request.suite}",
+        description="Combined connected-target evaluation",
+        cases=tuple(case for scenario in scenarios for case in scenario.cases),
+    )
+    try:
+        result = await run_evaluation_async(
+            target, combined, include_traces=request.include_traces,
+            timeout_seconds=request.timeout_seconds,
+        )
+        return persist_evaluation(result, tenant_id)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Do not log request models or provider credentials.
+        logger.warning("Connected evaluation failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=502, detail="Connected evaluation failed; verify target configuration and retry.") from exc
 
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
