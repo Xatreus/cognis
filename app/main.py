@@ -197,8 +197,16 @@ class ConnectedEvaluationRequest(BaseModel):
         if self.target_type == "model":
             if not self.api_key or not self.model:
                 raise ValueError("model targets require api_key and model")
-            if self.provider == "openai_compatible" and not self.base_url:
-                raise ValueError("openai_compatible targets require base_url")
+            if self.provider == "openai_compatible":
+                if not self.base_url:
+                    raise ValueError("openai_compatible targets require base_url")
+            elif self.base_url is not None:
+                # Never allow request data to redirect a preset provider's
+                # bearer credential to an attacker-controlled endpoint.
+                raise ValueError(
+                    "base_url may only be supplied when provider is openai_compatible; "
+                    "preset provider endpoints are fixed"
+                )
         elif not self.endpoint_url:
             raise ValueError("http_agent targets require endpoint_url")
         if self.suite == "quality" and not self.cases:
