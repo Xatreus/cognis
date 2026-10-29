@@ -28,7 +28,7 @@ from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.logging import configure_logging
 from app.schemas.evaluations import EvaluationRequest, EvaluationResponse
 from app.services.task_service import create_task as create_task_service
-from app.storage.evaluations import get_evaluation, initialize_store, list_evaluations, save_evaluation
+from app.storage.evaluations import check_store, get_evaluation, initialize_store, list_evaluations, save_evaluation
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -252,6 +252,12 @@ def liveness():
 
 @app.get("/health/ready", tags=["health"])
 def readiness():
+    """Report ready only when the configured persistence backend responds."""
+    try:
+        check_store()
+    except Exception as exc:
+        logger.warning("Readiness check failed (%s)", type(exc).__name__)
+        raise HTTPException(status_code=503, detail="Persistence backend is not ready") from exc
     return {"status": "ready"}
 
 
