@@ -9,6 +9,7 @@ from typing import Any
 import httpx
 
 from app.targets.http_utils import post_json_bounded
+from app.security.egress import EgressProxyConfigurationError, validate_egress_proxy_url
 
 
 class AgentEndpointError(ValueError):
@@ -53,7 +54,8 @@ class HTTPAgentTarget:
                  timeout_seconds: float = 15.0, allow_private: bool = False,
                  input_field: str = "input", output_field: str = "output",
                  auth_header: str = "authorization",
-                 client: httpx.AsyncClient | None = None) -> None:
+                 client: httpx.AsyncClient | None = None,
+                 proxy_url: str | None = None) -> None:
         if input_field not in {"input", "question"}:
             raise AgentEndpointError("input_field must be 'input' or 'question'.")
         if output_field not in {"output", "response", "answer"}:
@@ -66,6 +68,10 @@ class HTTPAgentTarget:
         self.input_field = input_field
         self.output_field = output_field
         self.auth_header = auth_header
+        try:
+            self.proxy_url = validate_egress_proxy_url(proxy_url) if proxy_url else None
+        except EgressProxyConfigurationError as exc:
+            raise AgentEndpointError(str(exc)) from exc
         self.client = client
 
     async def ainvoke(self, input_data: Any) -> str:
@@ -84,7 +90,7 @@ class HTTPAgentTarget:
                     timeout_seconds=self.timeout_seconds,
                 )
             else:
-                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, proxy=self.proxy_url) as client:
                     data = await post_json_bounded(
                         client, self.endpoint_url, json_body=payload, headers=headers,
                         timeout_seconds=self.timeout_seconds,
