@@ -15,6 +15,7 @@ class AgentExecution:
     output: Any
     tool_calls: tuple[dict[str, Any], ...] = ()
     trace: dict[str, Any] = field(default_factory=dict)
+    tool_call_evidence_available: bool | None = None
 
 
 @runtime_checkable

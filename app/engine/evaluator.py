@@ -3,7 +3,7 @@ import asyncio
 from uuid import uuid4
 
 from app.agents.demo_agent import DemoAgent
-from app.engine.assertions import evaluate_assertions
+from app.engine.assertions import AssertionResult, evaluate_assertions
 from app.engine.runner import AgentExecutionError, normalize_output, run_agent
 from app.engine.scenarios import EvaluationCase, EvaluationScenario
 from app.observability.trace_sanitizer import sanitize_tool_calls, sanitize_trace
@@ -14,6 +14,14 @@ from app.schemas.evaluations import (
     EvaluationMetrics,
     EvaluationResponse,
 )
+
+def _tool_name(call: dict) -> str:
+    name = call.get("name") or call.get("tool")
+    function = call.get("function")
+    if not name and isinstance(function, dict):
+        name = function.get("name")
+    return name.casefold() if isinstance(name, str) and name.strip() else ""
+
 
 DEMO_SCENARIO = EvaluationScenario(
     name="demo",
@@ -48,15 +56,28 @@ async def run_evaluation_async(
         raw = None
         trace: dict = {}
         tool_calls: list[dict] = []
+        tool_call_evidence_available = False
+        sanitized_calls: list[dict] = []
         try:
             raw, duration_ms = await run_agent(agent, case.input, timeout_seconds=timeout_seconds)
             actual = normalize_output(raw)
+            trace_value = getattr(raw, "trace", {})
+            raw_tool_calls = getattr(raw, "tool_calls", None)
+            evidence_flag = getattr(raw, "tool_call_evidence_available", None)
+            sanitized_calls = sanitize_tool_calls(raw_tool_calls or ())
+            shape_valid = (
+                isinstance(raw_tool_calls, (list, tuple))
+                and len(raw_tool_calls) <= 100
+                and all(isinstance(call, dict) for call in raw_tool_calls)
+                and len(sanitized_calls) == len(raw_tool_calls)
+                and all(_tool_name(call) for call in raw_tool_calls)
+            )
+            # Never infer completeness from a non-empty list: adapters must attest it.
+            tool_call_evidence_available = bool(evidence_flag) and shape_valid
             if include_traces:
-                trace_value = getattr(raw, "trace", {})
-                tool_call_value = getattr(raw, "tool_calls", ())
                 sanitized_trace = sanitize_trace(trace_value)
                 trace = sanitized_trace if isinstance(sanitized_trace, dict) else {}
-                tool_calls = sanitize_tool_calls(tool_call_value)
+                tool_calls = sanitized_calls
         except AgentExecutionError as exc:
             actual = "error"
             duration_ms = timeout_seconds * 1000 if "timeout" in str(exc).lower() else 0.0
@@ -76,6 +97,27 @@ async def run_evaluation_async(
                 latency_ms=duration_ms,
                 max_latency_ms=case.max_latency_ms,
             )
+            if case.forbidden_tools:
+                if not tool_call_evidence_available:
+                    checks.append(AssertionResult(
+                        name="tool_call_evidence_available",
+                        passed=False,
+                        message="Tool-call evidence unavailable or malformed; forbidden-tool policy cannot be verified.",
+                    ))
+                else:
+                    observed_names = {_tool_name(call) for call in sanitized_calls}
+                    forbidden = sorted({
+                        name for name in case.forbidden_tools if name.casefold() in observed_names
+                    })
+                    checks.append(AssertionResult(
+                        name="forbidden_tool_call",
+                        passed=not forbidden,
+                        message=(
+                            "No forbidden tool call was observed."
+                            if not forbidden
+                            else "Forbidden tool call observed: " + ", ".join(forbidden)
+                        ),
+                    ))
             passed = bool(checks) and all(item.passed for item in checks)
         case_metadata = sanitize_trace(case.metadata)
         results.append(CaseResult(
@@ -97,6 +139,7 @@ async def run_evaluation_async(
             metadata=case_metadata if isinstance(case_metadata, dict) else {},
             tool_calls=tool_calls,
             trace=trace,
+            tool_call_evidence_available=tool_call_evidence_available,
         ))
 
     passed_count = sum(item.passed for item in results)

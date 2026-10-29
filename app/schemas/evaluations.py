@@ -28,6 +28,7 @@ class CaseResult(BaseModel):
     # Trace data is sanitized before reaching this response model.
     tool_calls: list[dict[str, Any]] = Field(default_factory=list)
     trace: dict[str, Any] = Field(default_factory=dict)
+    tool_call_evidence_available: bool = False
 
 
 class EvaluationMetrics(BaseModel):

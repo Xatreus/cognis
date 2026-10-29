@@ -8,6 +8,8 @@ from typing import Any
 
 import httpx
 
+from app.agents.protocol import AgentExecution
+
 from app.targets.http_utils import post_json_bounded
 from app.security.egress import EgressProxyConfigurationError, validate_egress_proxy_url
 
@@ -74,7 +76,7 @@ class HTTPAgentTarget:
             raise AgentEndpointError(str(exc)) from exc
         self.client = client
 
-    async def ainvoke(self, input_data: Any) -> str:
+    async def ainvoke(self, input_data: Any) -> str | AgentExecution:
         headers = {"Content-Type": "application/json"}
         if self.auth_token:
             headers["X-API-Key" if self.auth_header == "x-api-key" else "Authorization"] = (
@@ -98,7 +100,24 @@ class HTTPAgentTarget:
             output = data.get(self.output_field) if isinstance(data, dict) else None
             if not isinstance(output, str):
                 raise RuntimeError("Agent response must be JSON with a string 'output' or 'response' field.")
-            return output
+            has_tool_calls = isinstance(data, dict) and "tool_calls" in data
+            has_trace = isinstance(data, dict) and "trace" in data
+            if not has_tool_calls and not has_trace:
+                return output
+            raw_calls = data.get("tool_calls", [])
+            if not isinstance(raw_calls, list) or any(not isinstance(call, dict) for call in raw_calls):
+                raise RuntimeError("Agent tool_calls must be a JSON array of objects.")
+            if len(raw_calls) > 100:
+                raise RuntimeError("Agent returned more than 100 tool calls; refusing to truncate policy evidence.")
+            raw_trace = data.get("trace", {})
+            if not isinstance(raw_trace, dict):
+                raise RuntimeError("Agent trace must be a JSON object.")
+            return AgentExecution(
+                output=output,
+                tool_calls=tuple(raw_calls),
+                trace=raw_trace,
+                tool_call_evidence_available=has_tool_calls,
+            )
         except httpx.TimeoutException as exc:
             raise RuntimeError("Agent endpoint timed out.") from exc
         except httpx.HTTPStatusError as exc:
