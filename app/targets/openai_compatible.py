@@ -22,8 +22,21 @@ def validate_provider_base_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise TargetConfigurationError("Provider base_url must be an HTTPS URL without embedded credentials.")
-    if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
-        raise TargetConfigurationError("Remote provider URL must not point to localhost.")
+    host = parsed.hostname.lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        raise TargetConfigurationError("Provider base_url must not point to localhost.")
+    try:
+        try:
+            addresses = {ipaddress.ip_address(host)}
+        except ValueError:
+            addresses = {
+                ipaddress.ip_address(item[4][0])
+                for item in socket.getaddrinfo(host, parsed.port or 443, type=socket.SOCK_STREAM)
+            }
+    except (OSError, ValueError) as exc:
+        raise TargetConfigurationError("Provider hostname could not be resolved safely.") from exc
+    if not addresses or any(not address.is_global for address in addresses):
+        raise TargetConfigurationError("Provider base_url must resolve only to public IP addresses.")
     return value.rstrip("/")
 
 
