@@ -1,226 +1,75 @@
 # Cognis
 
-**Cognis is an agent evaluation and reliability-testing platform.** It runs a defined set of inputs against an agent, checks its outputs against explicit assertions, records per-case latency, and produces a report that can be inspected and reproduced.
+**Cognis is an evaluation and security-regression platform for AI agents.** Connect an agent or model endpoint, run quality and security cases, inspect individual failures, and compare measurable results.
 
-This repository includes a **no-API-key recruiter demo**: a deterministic sample support agent, six committed test cases, and Markdown/JSON reports. It is designed to demonstrate the evaluation workflow clearly; it is not presented as a production security certification or an LLM benchmark.
+Cognis is an actively developed portfolio project. It provides reproducible regression signals—not a guarantee that an agent is secure, and not a production security certification.
 
-## See the demo first
+## Start here: run the demo
+
+The deterministic demo needs no provider API key, Docker daemon, PostgreSQL server, or paid inference.
 
 ### Requirements
-- Python 3.12 (the CI version)
-- Git
 
-No OpenRouter key, Docker daemon, PostgreSQL server, or network access is needed for the standalone demo.
+- Python **3.12–3.15** (Python 3.15 is a stable release).
+- Git.
 
 ### Windows PowerShell
 
 ```powershell
 git clone https://github.com/Xatreus/cognis.git
 cd cognis
-python -m venv .venv
+py -3.15 -m venv .venv
 .venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements-dev.txt
 python -m scripts.run_demo
 ```
 
-The command prints a report and writes:
-- `reports/demo-report.md` — human-readable summary, latency metrics, per-case outcomes, and failure details.
-- `reports/demo-report.json` — complete machine-readable evaluation result, including assertions and case metadata.
+If Python 3.15 is not installed, use `py -3.14`, `py -3.13`, or `py -3.12` instead.
 
-Exit code is `0` when every case passes and `1` when the evaluation fails. To choose another output directory:
+The demo writes:
+- `reports/demo-report.md` — human-readable results and failure details.
+- `reports/demo-report.json` — machine-readable results, assertions, case metadata, and metrics.
 
-```powershell
-python -m scripts.run_demo --output-dir reports/my-run
-```
+A successful run currently expects **6/6 cases to pass**, including two response-level security regression cases. Runtime latency varies by machine. The report is generated from the real run, not a hard-coded example.
 
-### What the six cases check
-
-| Case | Category | Expected behavior |
-|---|---|---|
-| Cancelled order refund | Correctness | Routes to `refund_eligible` |
-| Delivered order refund | Correctness | Routes to `review_required` |
-| Invoice question | Correctness | Routes to `human_review` |
-| Empty input | Robustness | Returns an evaluation result of `error` |
-| Prompt-injection override | Security regression | Preserves the trusted task's expected `SAFE` output |
-| Synthetic canary | Security regression | Does not echo the synthetic canary value |
-
-The sample agent and scenario live in `examples/sample_agent.py` and `scripts/run_demo.py`. The tests are ordinary Python tests and can be inspected or extended.
-
-## Example report
-
-A successful run should report **6/6 passed**, **0 failures**, and **2/2 security-tagged cases passed**. Latency is measured at runtime, so exact values vary by machine. Each report includes:
-
-- Overall status and pass rate
-- Failure count and per-case expected/actual output
-- Mean, p50, p95, and maximum latency
-- Security-tagged case results
-- Assertion failures and diagnostic messages
-- An explicit limitations section
-
-The report is generated from the actual evaluation response, not a hard-coded example. CI runs the same demo and uploads the Markdown and JSON outputs as the `cognis-demo-report` artifact.
-
-## Run the tests
+### Run the tests
 
 ```powershell
 python -m pytest -q
 ```
 
-The test suite covers the deterministic demo/report, API behavior, storage, and tenant-scoped history. GitHub Actions also builds the API and worker Docker images and smoke-tests the worker protocol. Check the pull request's Actions checks for the authoritative result; a local run is not claimed unless it was actually executed.
+GitHub Actions tests Python 3.12, 3.13, 3.14, and 3.15, builds the API and worker images, and smoke-tests the isolated worker protocol. See [CI runs](https://github.com/Xatreus/cognis/actions).
 
-## Architecture at a glance
+## Try the dashboard
 
-```text
-Test scenario (cases, expectations, tags)
-                  |
-                  v
-       Agent execution adapter
-                  |
-                  v
-       Output normalization
-                  |
-                  v
-       Deterministic assertions
-       - expected output
-       - required / forbidden text
-       - latency budget
-       - obvious secret-like output
-                  |
-                  v
-       Per-case results + metrics
-                  |
-          +-------+-------+
-          |               |
-          v               v
-      JSON result     Markdown report
-          |
-          v
-   Optional API persistence
-   SQLite (local) / PostgreSQL
-   Tenant-scoped evaluation history
-```
-
-Key code paths:
-- `app/engine/scenarios.py` — reusable scenario and case definitions.
-- `app/engine/runner.py` — sync/async invocation adapter and timeout handling.
-- `app/engine/assertions.py` — deterministic output assertions.
-- `app/engine/evaluator.py` — runs cases and computes evaluation metrics.
-- `app/observability/telemetry.py` — latency and reliability aggregates.
-- `examples/sample_agent.py` — sample agent; `scripts/run_demo.py` — recruiter scenario and report generator.
-- `app/main.py` — FastAPI endpoints and authentication.
-- `app/storage/evaluations.py` — SQLite/PostgreSQL persistence and tenant-scoped history queries.
-
-## Evaluation dashboard
-
-Start the API locally and open the browser dashboard:
+Start Cognis locally:
 
 ```powershell
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000/dashboard`. The dashboard uses the real Cognis API and tenant-scoped persisted history. From it you can run the deterministic demo suite, inspect each case's expected and actual output, review assertion failures and latency metrics, and browse previous runs. It does not require a hosted model key. If the API has bearer-token authentication configured, the dashboard prompts for a token when the API returns an authentication error; the token stays in the current browser session.
+Open:
+- Dashboard: http://127.0.0.1:8000/dashboard
+- Interactive API docs: http://127.0.0.1:8000/docs
+- Readiness check: http://127.0.0.1:8000/health/ready
 
-Dashboard assets are served by FastAPI from `app/static/`; no separate frontend build or Node installation is needed. The dashboard is an operator/developer console, not a complete multi-user SaaS frontend.
+Local development is permissive when no API token is configured. Keep it bound to loopback and do not expose this development configuration to an untrusted network.
 
-## API and optional integrations
+The dashboard supports running the deterministic demo, connecting a target, reviewing case-level assertions and latency, and browsing persisted evaluation history.
 
-Run the API locally:
+## Connect an agent
 
-```powershell
-python -m uvicorn app.main:app --reload
-```
+Cognis currently supports two target styles:
 
-Open `http://127.0.0.1:8000/docs`. The deterministic API demo is `POST /evaluations` with:
+1. **Model API (BYOK):** OpenAI, Google Gemini through its OpenAI-compatible endpoint, OpenRouter, or another OpenAI-compatible HTTPS endpoint. Supply your own provider key and model.
+2. **Existing HTTP agent:** expose a JSON-over-HTTP endpoint that accepts an input and returns a text output. If your agent uses a framework-specific runtime or protocol, put a small adapter endpoint in front of it.
 
-```json
-{"suite":"demo","include_traces":true}
-```
-
-Completed runs can be listed with `GET /evaluations/history` and retrieved with `GET /evaluations/history/{evaluation_id}`. Protected endpoints accept a bearer token. In local development, authentication is permissive when no key configuration is set; do not expose that configuration to an untrusted network.
-
-For multiple demo tenants, set `COGNIS_API_KEYS_JSON` to a JSON mapping of distinct high-entropy bearer tokens to tenant IDs, for example:
-
-```json
-{"replace-with-random-key-for-a":"customer-a","replace-with-random-key-for-b":"customer-b"}
-```
-
-Keep real keys in environment configuration or a secret manager, never in Git. The API derives tenant identity from the configured token mapping; callers cannot select their own tenant through a request field. The current mapping is an operator-managed environment configuration, **not** a complete tenant onboarding or API-key lifecycle system.
-
-### PostgreSQL
-
-The API accepts `COGNIS_DATABASE_URL`, for example `postgresql://cognis:password@localhost:5432/cognis`. The Compose file contains an opt-in PostgreSQL service; set `POSTGRES_PASSWORD` and configure `COGNIS_DATABASE_URL` to point to the Compose hostname `postgres` when running the API and database together. SQLite remains the zero-setup local default. Review the Compose profiles and environment values before deployment.
-
-### Live model provider
-
-The OpenRouter adapter can run a live smoke test using `OPENROUTER_API_KEY` and `OPENROUTER_MODEL`. Provider tests may incur charges and depend on network/provider availability. The recruiter demo does not call a hosted model.
-
-## Security and limitations
-
-Cognis provides useful **regression signals**, not proof of correctness or security:
-
-- The included sample agent is deterministic Python logic, not an LLM; its tests prove the evaluation pipeline works on known examples, not that a general-purpose model is safe.
-- The six demo cases are small and hand-written. They are not a statistically representative benchmark.
-- Prompt-injection and synthetic-canary tests cover only their stated fixtures. Passing them does not establish resistance to broader prompt injection or data exfiltration.
-- The obvious-secret check is heuristic and can miss leaks or flag harmless text.
-- Latency values are local measurements, not production capacity guarantees.
-- The in-process execution runner's timeout is not a sandbox. Use the isolated worker path for supported untrusted-agent execution and review its threat model before deployment.
-- Tenant scoping in application queries is not a substitute for a full SaaS identity lifecycle, key rotation/revocation, database-level row security, audit logging, rate limiting, and a production security review.
-- PostgreSQL support and tenant isolation should be validated by CI and tested in the target deployment configuration before relying on them operationally.
-
-## Project status
-
-This is an actively developed portfolio project focused on agent evaluation, reproducible testing, observability, worker isolation, and tenant-aware persistence. See the code, tests, CI results, and generated report to verify the implemented behavior rather than relying on claims in this document.
-
-
-## Try the connected-agent workflow with a local HTTP fixture
-
-Before connecting a real agent, you can verify the entire HTTP integration without a model API key or paid inference. This starts a second local service that implements Cognis's documented JSON contract.
-
-**Terminal 1 — start Cognis API** (Windows PowerShell):
-
-```powershell
-$env:COGNIS_ALLOW_PRIVATE_AGENT_URLS = "true"
-python -m uvicorn app.main:app --reload --port 8000
-```
-
-**Terminal 2 — start the sample HTTP agent**:
-
-```powershell
-python -m uvicorn examples.sample_http_agent:app --reload --port 8001
-```
-
-Open `http://127.0.0.1:8000/dashboard`, choose **Connect target**, then select:
-
-- Target type: **Existing HTTP agent**
-- Endpoint URL: `http://127.0.0.1:8001/run`
-- Input/output contract: **input → output**
-- Test suite: **Quality + security baseline**
-- **Allow local/private endpoint**: enabled
-
-Run the tests. The deterministic fixture is designed to pass the four built-in quality cases and the three response-level security probes (7/7). The integration test in `tests/test_sample_http_agent.py` exercises the same adapter contract in CI.
-
-The private URL setting is deliberately for local development only. Do not enable `COGNIS_ALLOW_PRIVATE_AGENT_URLS` on a publicly accessible deployment. This sample is a protocol fixture, not an LLM and not proof that real agents are secure.
-
-## Connect your own model or agent (BYOK)
-
-Start the API and open `http://127.0.0.1:8000/dashboard`:
-
-```powershell
-uvicorn app.main:app --reload
-```
-
-Choose **Connect target**. Cognis currently supports:
-
-- **OpenAI** — provide your API key and model ID.
-- **Google Gemini** — use a Gemini API key and an OpenAI-compatible model ID. Cognis uses Google's documented OpenAI-compatible endpoint.
-- **OpenRouter** — provide your own OpenRouter key and model ID.
-- **Other OpenAI-compatible APIs** — provide an HTTPS base URL, key, and model ID.
-- **Existing HTTP agent** — provide an HTTPS endpoint and optional bearer token.
-
-For a model provider, the key is sent only with the evaluation request and is not stored in evaluation history. Cognis does not need your OpenRouter key or any centrally hosted provider key for user-supplied runs. Use a provider key with limited permissions and usage limits.
+Cognis does not require a centrally hosted model key. Provider credentials are request-scoped and are not intentionally persisted in evaluation history; still use limited-scope keys and synthetic test data.
 
 ### HTTP agent contract
 
-Cognis sends a JSON POST request to the endpoint you configure:
+Cognis sends a JSON POST similar to:
 
 ```json
 {
@@ -229,57 +78,139 @@ Cognis sends a JSON POST request to the endpoint you configure:
 }
 ```
 
-Your endpoint should return JSON containing a string `output` or `response`:
+Your endpoint returns JSON with a string `output`, `response`, or `answer`, depending on the output-field setting:
 
 ```json
 {"output": "SAFE"}
 ```
 
-This is a minimal interoperability contract. Agents that require a different protocol can expose a small adapter endpoint or later use a dedicated Cognis SDK.
+For tool-use policy checks, an instrumented endpoint can also return a complete `tool_calls` array and optional `trace` object. See [tool-call policy evaluation](docs/tool-call-policy-evaluation.md). Cognis can evaluate only the events an adapter reports; it cannot independently prove a remote agent's trace is complete.
 
-### Test suites
+### Run a connected evaluation through the API
 
-- **Quality** — provide a custom input and optional exact expected output / required phrase.
-- **Security baseline** — deterministic prompt-injection, synthetic-canary disclosure, and system-prompt disclosure probes.
-- **Quality + security baseline** — runs the demo quality cases plus the security baseline unless you supply custom quality cases.
+For a remote agent, use its HTTPS endpoint and send a request such as:
 
-Security baseline results are signals, not proof of security or a certification. Exact-output probes can produce false positives for models that answer in a different but safe wording. Review evidence and tailor cases to your application's policy.
+```json
+{
+  "target_type": "http_agent",
+  "suite": "quality",
+  "endpoint_url": "https://your-agent.example/run",
+  "agent_input_field": "input",
+  "agent_output_field": "output",
+  "timeout_seconds": 20,
+  "include_traces": true,
+  "cases": [
+    {
+      "case_id": "basic-classification",
+      "input": "Classify this request as SAFE.",
+      "expected_output": "SAFE",
+      "tags": ["quality"]
+    }
+  ]
+}
+```
 
-### Production outbound-network policy
+Send it to `POST /evaluations/connected`. If you configured a bearer token, include `Authorization: Bearer <your-token>`. The API documentation at `/docs` shows the request schema and available endpoints.
 
-For `COGNIS_ENV=production`, the `POST /evaluations/connected` endpoint requires the operator to configure `COGNIS_EGRESS_PROXY_URL`. Without it, connected-target evaluations fail closed with HTTP 503. In development, direct connections remain available for local experiments.
+The built-in security suite is a small regression baseline, not a comprehensive adversarial campaign. Use cases appropriate to your agent's tools, permissions, data, and business risks.
 
-The proxy is a security boundary, not merely a connectivity setting. Deploy a policy-enforcing egress proxy and network firewall that resolve hostnames at connection time, block loopback/private/link-local/multicast/reserved addresses and cloud metadata services, and prevent direct outbound traffic that bypasses the proxy. Validate every resolved IPv4 and IPv6 address and ensure the proxy connects only to a validated address; checking DNS separately from the actual connection does not prevent DNS rebinding. Do not assume that an arbitrary forward proxy provides these controls.
+### Local HTTP fixture
 
-The proxy URL must be operator-controlled and use HTTP(S), without embedded credentials, paths, query strings, or fragments. Keep proxy credentials outside the URL and manage them through deployment secrets if your proxy requires authentication; this initial implementation intentionally supports unauthenticated proxy URLs only. This control reduces the risk of server-side request forgery from caller-selected agent URLs, but it does not prove the proxy's policy is correct. Verify the deployed proxy and network policy with security tests before exposing Cognis publicly.
+To test the HTTP integration without a hosted model key, start the API in one terminal and the sample fixture in another:
 
-### Local agent development and SSRF protection
+```powershell
+# Terminal 1: local development API
+$env:COGNIS_ALLOW_PRIVATE_AGENT_URLS = "true"
+python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 
-For security, Cognis requires HTTPS for remote agent endpoints and blocks non-public IP destinations by default. Private/loopback targets are allowed only when both the server enables `COGNIS_ALLOW_PRIVATE_AGENT_URLS=true` and the request explicitly opts in. **Do not enable this on a publicly accessible deployment.** This opt-in is intended for local development only.
+# Terminal 2: deterministic sample agent
+python -m uvicorn examples.sample_http_agent:app --reload --host 127.0.0.1 --port 8001
+```
 
-This first connector release uses request-scoped credentials; it does not save reusable connections. Do not expose the API publicly without authentication, rate limits, request quotas, and isolated workers. Avoid sending production secrets or enabling agents that can perform destructive actions while testing.
+In the dashboard, choose **Connect target** → **Existing HTTP agent**, set the endpoint to `http://127.0.0.1:8001/run`, select **Quality + security baseline**, and explicitly enable the local/private endpoint option.
 
+This private-target opt-in is for local development only. Never enable it on a publicly reachable deployment. The fixture verifies the adapter workflow; it is not an LLM and does not demonstrate that arbitrary agents are secure.
 
-## Connect Invoice Buddy from the dashboard
+## What Cognis evaluates
 
-Cognis can call Invoice Buddy's existing `POST /ask` API without changing Invoice Buddy's code. Run both APIs locally on your machine.
+| Capability | Current behavior |
+|---|---|
+| Quality regression | Expected output, required/forbidden text, and case-level latency budgets |
+| Security regression | Small prompt-injection, synthetic-canary, and system-prompt-disclosure probes |
+| Tool-call policy | Can flag declared forbidden tool names when a target reports complete tool-call evidence |
+| Metrics | Pass/fail counts, pass rate, and latency summaries |
+| Reports | JSON and Markdown output with per-case assertions and diagnostic details |
+| Dashboard/API | Run demo or connected evaluations and inspect tenant-scoped history |
+| Persistence | SQLite for local use; optional PostgreSQL configuration |
+| Execution workers | Separate disposable Docker worker path for registered adapters, with resource and container restrictions |
 
-1. Start Invoice Buddy in its repository with its configured LLM key and API key:
-   ```powershell
-   $env:OPENROUTER_API_KEY = "your-own-provider-key"
-   $env:INVOICE_BUDDY_API_KEY = "your-invoice-buddy-api-key"
-   python -m uvicorn invoice_buddy.api:app --app-dir src --reload --port 8001
-   ```
-2. In a second terminal, start Cognis with its local agent connector enabled:
-   ```powershell
-   $env:COGNIS_ALLOW_PRIVATE_AGENT_URLS = "true"
-   python -m uvicorn app.main:app --reload --port 8000
-   ```
-   The private URL opt-in is for local development only. Do not enable it on a public deployment.
-3. Open `http://127.0.0.1:8000/dashboard`, click **Connect target**, and choose **Existing HTTP agent**.
-4. Set the endpoint to `http://127.0.0.1:8001/ask`, choose **Invoice Buddy API (question → answer)**, choose **X-API-Key**, enter the same Invoice Buddy API key, and enable **Allow local/private endpoint**.
-5. Choose **Custom quality cases** and test one question at a time, such as `What is the total spend by vendor?`. Add an expected phrase only if you know it should appear based on the invoices currently in your local database.
+## Architecture
 
-Invoice Buddy accepts `{"question":"..."}` and returns `{"answer":"..."}`; Cognis maps that contract to its target interface. The custom quality form currently accepts one case per run. Use a question that is appropriate for your own seeded invoice data; an empty database cannot produce meaningful financial-answer checks.
+```text
+Dashboard / API client
+        |
+        v
+FastAPI + request validation + bearer authentication
+        |
+        v
+Target adapter (registered agent / HTTP endpoint / compatible model API)
+        |
+        v
+Evaluation runner
+        |
+        +--> deterministic assertions
+        +--> security regression checks
+        +--> adapter-provided tool-call policy checks
+        |
+        v
+Case results + latency/pass-rate metrics
+        |
+        +--> JSON / Markdown reports
+        +--> SQLite or PostgreSQL history
+```
 
-**Important:** these are real LLM calls through Invoice Buddy and may consume your configured provider quota. Do not upload real financial documents or expose either local API publicly while testing. Cognis records evaluation outputs, so test with synthetic invoice data and avoid asking questions that would return sensitive information.
+Useful entry points:
+- `app/main.py` — API routes, request validation, authentication, and orchestration.
+- `app/engine/scenarios.py` — scenario and case contracts.
+- `app/engine/evaluator.py` — evaluation execution and result aggregation.
+- `app/engine/assertions.py` — deterministic assertions.
+- `app/engine/security_suite.py` — built-in security regression cases.
+- `app/targets/http_agent.py` — HTTP-agent adapter.
+- `app/targets/openai_compatible.py` — compatible model API adapter.
+- `app/engine/container_worker.py` — isolated container execution for registered adapters.
+- `app/storage/evaluations.py` — persistence and tenant-scoped history.
+- `scripts/run_demo.py` — deterministic demo and report generation.
+
+## Python and dependency policy
+
+- The supported baseline is Python 3.12–3.15, exercised by the CI matrix.
+- `requirements.txt` contains runtime dependencies. `requirements-dev.txt` adds test and lint tooling.
+- Dependency ranges are bounded by major versions and define minimum versions; CI validates the currently resolved set. These are not a fully pinned lockfile.
+- Docker images use Python 3.15; CI tests the application on 3.12, 3.13, 3.14, and 3.15.
+
+See `pyproject.toml`, the requirements files, and [Dependabot configuration](.github/dependabot.yml) for details.
+
+## Security, deployment, and limitations
+
+Cognis is an evaluation tool—not a sandbox that can safely execute arbitrary user-supplied code, and not a security certification service.
+
+- **Do not expose development mode publicly.** Configure strong bearer tokens, TLS, rate limits, quotas, logging controls, and an operator-managed secret policy before deployment.
+- **Production connected evaluations require an egress proxy.** The proxy and network firewall must enforce destination-IP policy at connection time and prevent direct egress bypass. Setting the proxy URL alone does not make an arbitrary proxy safe.
+- **Never expose the Docker socket to untrusted clients.** Container execution should use a dedicated worker host/daemon with restrictive network and resource policy.
+- **Subprocess execution is not a hostile-code sandbox.** The Docker worker path has stronger isolation controls but still requires deployment-specific review.
+- **Security probes are intentionally small.** Passing them is not evidence of broad prompt-injection resistance, data protection, authorization correctness, or safe tool behavior.
+- **Trace checks depend on the adapter.** Cognis cannot independently verify that a remote agent reports every tool call or side effect.
+- **Outputs and traces may contain sensitive information.** Use synthetic data, review retention/access policies, and avoid sending secrets or real customer data to test endpoints.
+- **Production readiness remains a work in progress.** Background job orchestration, complete observability/cost metrics, deployment-specific security review, and broader adversarial coverage remain areas for further engineering.
+
+For design and trust boundaries, see [architecture](docs/architecture.md) and [tool-call policy evaluation](docs/tool-call-policy-evaluation.md).
+
+## Development workflow
+
+```powershell
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+python -m scripts.run_demo --output-dir reports
+```
+
+Please report bugs or propose improvements through [GitHub Issues](https://github.com/Xatreus/cognis/issues).
