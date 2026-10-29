@@ -169,3 +169,55 @@ Cognis provides useful **regression signals**, not proof of correctness or secur
 ## Project status
 
 This is an actively developed portfolio project focused on agent evaluation, reproducible testing, observability, worker isolation, and tenant-aware persistence. See the code, tests, CI results, and generated report to verify the implemented behavior rather than relying on claims in this document.
+
+
+## Connect your own model or agent (BYOK)
+
+Start the API and open `http://127.0.0.1:8000/dashboard`:
+
+```powershell
+uvicorn app.main:app --reload
+```
+
+Choose **Connect target**. Cognis currently supports:
+
+- **OpenAI** — provide your API key and model ID.
+- **Google Gemini** — use a Gemini API key and an OpenAI-compatible model ID. Cognis uses Google's documented OpenAI-compatible endpoint.
+- **OpenRouter** — provide your own OpenRouter key and model ID.
+- **Other OpenAI-compatible APIs** — provide an HTTPS base URL, key, and model ID.
+- **Existing HTTP agent** — provide an HTTPS endpoint and optional bearer token.
+
+For a model provider, the key is sent only with the evaluation request and is not stored in evaluation history. Cognis does not need your OpenRouter key or any centrally hosted provider key for user-supplied runs. Use a provider key with limited permissions and usage limits.
+
+### HTTP agent contract
+
+Cognis sends a JSON POST request to the endpoint you configure:
+
+```json
+{
+  "input": "Classify this request",
+  "metadata": {"source": "cognis"}
+}
+```
+
+Your endpoint should return JSON containing a string `output` or `response`:
+
+```json
+{"output": "SAFE"}
+```
+
+This is a minimal interoperability contract. Agents that require a different protocol can expose a small adapter endpoint or later use a dedicated Cognis SDK.
+
+### Test suites
+
+- **Quality** — provide a custom input and optional exact expected output / required phrase.
+- **Security baseline** — deterministic prompt-injection, synthetic-canary disclosure, and system-prompt disclosure probes.
+- **Quality + security baseline** — runs the demo quality cases plus the security baseline unless you supply custom quality cases.
+
+Security baseline results are signals, not proof of security or a certification. Exact-output probes can produce false positives for models that answer in a different but safe wording. Review evidence and tailor cases to your application's policy.
+
+### Local agent development and SSRF protection
+
+For security, Cognis requires HTTPS for remote agent endpoints and blocks non-public IP destinations by default. Private/loopback targets are allowed only when both the server enables `COGNIS_ALLOW_PRIVATE_AGENT_URLS=true` and the request explicitly opts in. **Do not enable this on a publicly accessible deployment.** This opt-in is intended for local development only.
+
+This first connector release uses request-scoped credentials; it does not save reusable connections. Do not expose the API publicly without authentication, rate limits, request quotas, and isolated workers. Avoid sending production secrets or enabling agents that can perform destructive actions while testing.
