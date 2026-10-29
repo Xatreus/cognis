@@ -16,9 +16,14 @@ services:
 
   cognis-api:
     build: .
+    # Safe local default. For public deployments, place behind a TLS reverse
+    # proxy and deliberately configure the bind address and network policy.
     ports:
-      - "8000:8000"
+      - "${COGNIS_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     environment:
+      COGNIS_ENV: ${COGNIS_ENV:-production}
+      COGNIS_API_KEY: ${COGNIS_API_KEY:-}
+      COGNIS_API_KEYS_JSON: ${COGNIS_API_KEYS_JSON:-}
       COGNIS_LOG_LEVEL: INFO
       COGNIS_DATABASE_URL: ${COGNIS_DATABASE_URL:-}
       COGNIS_DATABASE_PATH: /data/cognis.db
@@ -39,8 +44,11 @@ services:
   cognis-api-with-docker-workers:
     build: .
     ports:
-      - "8000:8000"
+      - "${COGNIS_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     environment:
+      COGNIS_ENV: ${COGNIS_ENV:-production}
+      COGNIS_API_KEY: ${COGNIS_API_KEY:-}
+      COGNIS_API_KEYS_JSON: ${COGNIS_API_KEYS_JSON:-}
       COGNIS_LOG_LEVEL: INFO
       COGNIS_DATABASE_PATH: /data/cognis.db
       COGNIS_CONTAINER_WORKER_IMAGE: cognis-agent-worker:latest
