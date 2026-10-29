@@ -7,7 +7,7 @@ def test_demo_evaluation_passes_all_cases():
     response = client.post('/evaluations', json={'suite':'demo'})
     assert response.status_code == 200
     data = response.json()
-    assert data['total'] == 4 and data['passed'] == 4 and data['failed'] == 0
+    assert data['total'] == 4 and data['passed'] == 4 and data['failed'] == 0, data['results']
     assert data['pass_rate'] == 1.0
 
 def test_traces_can_be_hidden():

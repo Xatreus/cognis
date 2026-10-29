@@ -21,7 +21,7 @@ $('#target-form').addEventListener('submit',async e=>{
    body.endpoint_url=$('#agent-url').value.trim();body.auth_token=$('#agent-token').value.trim()||null;
    body.allow_private_agent_url=$('#allow-private-agent').checked;
    body.agent_auth_header=$('#agent-auth-style').value;
-   if($('#agent-contract').value==='invoice-buddy'){body.agent_input_field='question';body.agent_output_field='answer';}
+   if($('#agent-contract').value==='question-answer'){body.agent_input_field='question';body.agent_output_field='answer';}
  }
  if(suite==='quality'){
    const input=$('#quality-input').value;
