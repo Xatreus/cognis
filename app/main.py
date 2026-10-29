@@ -185,6 +185,9 @@ class ConnectedEvaluationRequest(BaseModel):
     endpoint_url: str | None = Field(default=None, max_length=2000)
     auth_token: str | None = Field(default=None, max_length=4096)
     allow_private_agent_url: bool = False
+    agent_input_field: Literal["input", "question"] = "input"
+    agent_output_field: Literal["output", "response", "answer"] = "output"
+    agent_auth_header: Literal["authorization", "x-api-key"] = "authorization"
     timeout_seconds: float = Field(default=20, gt=0, le=60)
     include_traces: bool = True
     cases: list[CaseRequest] = Field(default_factory=list, max_length=MAX_CASES_PER_REQUEST)
@@ -491,6 +494,9 @@ async def create_connected_evaluation(request: ConnectedEvaluationRequest, tenan
                 endpoint_url=request.endpoint_url or "", auth_token=request.auth_token,
                 timeout_seconds=request.timeout_seconds,
                 allow_private=server_allows_private and request.allow_private_agent_url,
+                input_field=request.agent_input_field,
+                output_field=request.agent_output_field,
+                auth_header=request.agent_auth_header,
             )
     except (TargetConfigurationError, AgentEndpointError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
