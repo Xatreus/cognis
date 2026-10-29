@@ -55,3 +55,32 @@ def test_connected_endpoint_blocks_private_agent_urls_by_default(monkeypatch):
             "suite": "security"
         })
         assert response.status_code == 422
+
+
+
+def test_connected_endpoint_rejects_custom_base_url_for_preset_provider():
+    """A preset provider must never send its API key to a caller-selected host."""
+    with TestClient(app) as client:
+        response = client.post("/evaluations/connected", json={
+            "target_type": "model",
+            "provider": "openai",
+            "api_key": "temporary-test-secret",
+            "model": "test-model",
+            "base_url": "https://attacker.example/v1",
+            "suite": "security",
+        })
+    assert response.status_code == 422
+    assert "preset provider endpoints are fixed" in response.text
+
+
+def test_connected_endpoint_requires_base_url_for_custom_compatible_provider():
+    with TestClient(app) as client:
+        response = client.post("/evaluations/connected", json={
+            "target_type": "model",
+            "provider": "openai_compatible",
+            "api_key": "temporary-test-secret",
+            "model": "test-model",
+            "suite": "security",
+        })
+    assert response.status_code == 422
+    assert "openai_compatible targets require base_url" in response.text
