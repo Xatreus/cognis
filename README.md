@@ -216,6 +216,14 @@ This is a minimal interoperability contract. Agents that require a different pro
 
 Security baseline results are signals, not proof of security or a certification. Exact-output probes can produce false positives for models that answer in a different but safe wording. Review evidence and tailor cases to your application's policy.
 
+### Production outbound-network policy
+
+For `COGNIS_ENV=production`, the `POST /evaluations/connected` endpoint requires the operator to configure `COGNIS_EGRESS_PROXY_URL`. Without it, connected-target evaluations fail closed with HTTP 503. In development, direct connections remain available for local experiments.
+
+The proxy is a security boundary, not merely a connectivity setting. Deploy a policy-enforcing egress proxy and network firewall that resolve hostnames at connection time, block loopback/private/link-local/multicast/reserved addresses and cloud metadata services, and prevent direct outbound traffic that bypasses the proxy. Validate every resolved IPv4 and IPv6 address and ensure the proxy connects only to a validated address; checking DNS separately from the actual connection does not prevent DNS rebinding. Do not assume that an arbitrary forward proxy provides these controls.
+
+The proxy URL must be operator-controlled and use HTTP(S), without embedded credentials, paths, query strings, or fragments. Keep proxy credentials outside the URL and manage them through deployment secrets if your proxy requires authentication; this initial implementation intentionally supports unauthenticated proxy URLs only. This control reduces the risk of server-side request forgery from caller-selected agent URLs, but it does not prove the proxy's policy is correct. Verify the deployed proxy and network policy with security tests before exposing Cognis publicly.
+
 ### Local agent development and SSRF protection
 
 For security, Cognis requires HTTPS for remote agent endpoints and blocks non-public IP destinations by default. Private/loopback targets are allowed only when both the server enables `COGNIS_ALLOW_PRIVATE_AGENT_URLS=true` and the request explicitly opts in. **Do not enable this on a publicly accessible deployment.** This opt-in is intended for local development only.

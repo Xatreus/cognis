@@ -491,6 +491,12 @@ async def create_connected_evaluation(request: ConnectedEvaluationRequest, tenan
     from app.engine.security_suite import security_scenario
     from app.targets.http_agent import AgentEndpointError, HTTPAgentTarget
     from app.targets.openai_compatible import OpenAICompatibleTarget, PROVIDER_PRESETS, TargetConfigurationError
+    from app.security.egress import EgressProxyConfigurationError, connected_target_proxy_url
+
+    try:
+        proxy_url = connected_target_proxy_url(production=COGNIS_ENV == "production")
+    except EgressProxyConfigurationError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     try:
         if request.target_type == "model":
@@ -498,6 +504,7 @@ async def create_connected_evaluation(request: ConnectedEvaluationRequest, tenan
             target = OpenAICompatibleTarget(
                 api_key=request.api_key or "", model=request.model or "", base_url=base_url,
                 timeout_seconds=request.timeout_seconds,
+                proxy_url=proxy_url,
             )
         else:
             # Private/loopback access is disabled unless explicitly enabled by the server.
@@ -511,6 +518,7 @@ async def create_connected_evaluation(request: ConnectedEvaluationRequest, tenan
                 input_field=request.agent_input_field,
                 output_field=request.agent_output_field,
                 auth_header=request.agent_auth_header,
+                proxy_url=proxy_url,
             )
     except (TargetConfigurationError, AgentEndpointError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
