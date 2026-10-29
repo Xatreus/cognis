@@ -1,5 +1,5 @@
-# Separate image for agent execution; do not use the API image as a worker.
-FROM python:3.12-slim
+# Separate image for registered-agent execution; never use the API image as a worker.
+FROM python:3.15-slim
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1
 WORKDIR /app
 COPY requirements.txt .
