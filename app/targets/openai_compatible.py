@@ -14,6 +14,7 @@ from typing import Any
 import httpx
 
 from app.targets.http_utils import post_json_bounded
+from app.security.egress import EgressProxyConfigurationError, validate_egress_proxy_url
 
 
 class TargetConfigurationError(ValueError):
@@ -46,7 +47,7 @@ class OpenAICompatibleTarget:
     """Minimal async target returning the assistant's text content."""
 
     def __init__(self, *, api_key: str, model: str, base_url: str, timeout_seconds: float = 30.0,
-                 client: httpx.AsyncClient | None = None) -> None:
+                 client: httpx.AsyncClient | None = None, proxy_url: str | None = None) -> None:
         if not api_key or len(api_key) > 4096:
             raise TargetConfigurationError("A valid provider API key is required.")
         if not model or len(model) > 200:
@@ -55,6 +56,10 @@ class OpenAICompatibleTarget:
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
+        try:
+            self.proxy_url = validate_egress_proxy_url(proxy_url) if proxy_url else None
+        except EgressProxyConfigurationError as exc:
+            raise TargetConfigurationError(str(exc)) from exc
         self.client = client
 
     async def ainvoke(self, input_data: Any) -> str:
@@ -69,7 +74,7 @@ class OpenAICompatibleTarget:
                     timeout_seconds=self.timeout_seconds,
                 )
             else:
-                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False, proxy=self.proxy_url) as client:
                     data = await post_json_bounded(
                         client, endpoint, json_body=payload, headers=headers,
                         timeout_seconds=self.timeout_seconds,
