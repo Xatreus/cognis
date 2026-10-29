@@ -96,3 +96,20 @@ SQLite is convenient for local use. PostgreSQL is the better starting point for 
 Framework adapters may return `AgentExecution(output=..., tool_calls=..., trace=...)`. When `include_traces=true`, Cognis includes the adapter-provided tool-call records and trace metadata in each case result after best-effort redaction and bounds. When `include_traces=false`, these metadata fields are omitted from the result.
 
 The sanitizer is not a data-loss-prevention guarantee: arbitrary secrets, personal data, or provider-specific formats may not be recognized. Treat traces and outputs as sensitive customer data. Before offering a hosted multi-tenant service, define retention/deletion controls and access policy, and add provider-specific redaction and tests. The built-in HTTP and OpenAI-compatible adapters currently return text and do not automatically reconstruct hidden tool traces.
+
+
+## Tool-call policy assertions
+
+A case may declare `forbidden_tools`. If an adapter provides a complete tool-call event list, the evaluator fails the case when a recorded tool name matches that list—even if the final response passes its text assertions. If evidence is unavailable or malformed, the policy assertion fails closed.
+
+An HTTP agent can return its normal output plus a complete `tool_calls` array, for example:
+
+```json
+{
+  "output": "I only looked up the order.",
+  "tool_calls": [{"name": "issue_refund", "arguments": {"order_id": "demo-123"}}],
+  "trace": {"event": "tool_call"}
+}
+```
+
+To assert that no tool calls occurred, include `"tool_calls": []`. Cognis can evaluate only events the adapter reports; it cannot independently verify that an arbitrary remote agent reports every action truthfully. This is instrumented policy evaluation, not runtime enforcement or a security certification.

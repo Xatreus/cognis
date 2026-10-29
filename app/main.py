@@ -105,6 +105,7 @@ class CaseRequest(BaseModel):
     expected_output: Any | None = None
     contains: list[str] = Field(default_factory=list, max_length=20)
     not_contains: list[str] = Field(default_factory=list, max_length=20)
+    forbidden_tools: list[str] = Field(default_factory=list, max_length=20)
     max_latency_ms: float | None = Field(default=None, gt=0)
     tags: list[str] = Field(default_factory=list, max_length=20)
 
@@ -308,7 +309,7 @@ async def create_custom_evaluation(request: CustomEvaluationRequest, tenant_id: 
             input=case.input,
             expected_output=case.expected_output,
             contains=tuple(case.contains),
-            not_contains=tuple(case.not_contains),
+            not_contains=tuple(case.not_contains), forbidden_tools=tuple(case.forbidden_tools),
             max_latency_ms=case.max_latency_ms,
             tags=tuple(case.tags),
         ) for case in request.cases),
@@ -348,7 +349,7 @@ async def create_isolated_evaluation(request: IsolatedEvaluationRequest, tenant_
             input=case.input,
             expected_output=case.expected_output,
             contains=tuple(case.contains),
-            not_contains=tuple(case.not_contains),
+            not_contains=tuple(case.not_contains), forbidden_tools=tuple(case.forbidden_tools),
             max_latency_ms=case.max_latency_ms,
             tags=tuple(case.tags),
         ) for case in request.cases),
@@ -403,7 +404,7 @@ async def create_container_evaluation(request: ContainerEvaluationRequest, tenan
             input=case.input,
             expected_output=case.expected_output,
             contains=tuple(case.contains),
-            not_contains=tuple(case.not_contains),
+            not_contains=tuple(case.not_contains), forbidden_tools=tuple(case.forbidden_tools),
             max_latency_ms=case.max_latency_ms,
             tags=tuple(case.tags),
         ) for case in request.cases),
@@ -531,7 +532,7 @@ async def create_connected_evaluation(request: ConnectedEvaluationRequest, tenan
                 description="User-defined quality checks",
                 cases=tuple(EvaluationCase(
                     case_id=case.case_id, input=case.input, expected_output=case.expected_output,
-                    contains=tuple(case.contains), not_contains=tuple(case.not_contains),
+                    contains=tuple(case.contains), not_contains=tuple(case.not_contains), forbidden_tools=tuple(case.forbidden_tools),
                     max_latency_ms=case.max_latency_ms, tags=tuple(case.tags) or ("quality",),
                 ) for case in request.cases),
             ))

@@ -12,6 +12,7 @@ class EvaluationCase:
     expected_output: Any | None = None
     contains: tuple[str, ...] = ()
     not_contains: tuple[str, ...] = ()
+    forbidden_tools: tuple[str, ...] = ()
     max_latency_ms: float | None = None
     tags: tuple[str, ...] = ()
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -19,6 +20,8 @@ class EvaluationCase:
     def __post_init__(self) -> None:
         if not self.case_id.strip():
             raise ValueError("case_id must not be empty")
+        if any(not isinstance(name, str) or not name.strip() for name in self.forbidden_tools):
+            raise ValueError("forbidden tool names must be non-empty strings")
         if self.max_latency_ms is not None and self.max_latency_ms <= 0:
             raise ValueError("max_latency_ms must be greater than zero")
 
