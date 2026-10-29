@@ -1,0 +1,78 @@
+"""BYOK adapter for OpenAI-compatible chat-completions APIs.
+
+Supports OpenAI-compatible providers, including Gemini's compatibility endpoint,
+OpenRouter, and many self-hosted gateways. Credentials are request-scoped and are
+never persisted by this module.
+"""
+from __future__ import annotations
+
+import ipaddress
+import socket
+from urllib.parse import urlparse
+from typing import Any
+
+import httpx
+
+
+class TargetConfigurationError(ValueError):
+    pass
+
+
+def validate_provider_base_url(value: str) -> str:
+    parsed = urlparse(value)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise TargetConfigurationError("Provider base_url must be an HTTPS URL without embedded credentials.")
+    if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+        raise TargetConfigurationError("Remote provider URL must not point to localhost.")
+    return value.rstrip("/")
+
+
+class OpenAICompatibleTarget:
+    """Minimal async target returning the assistant's text content."""
+
+    def __init__(self, *, api_key: str, model: str, base_url: str, timeout_seconds: float = 30.0,
+                 client: httpx.AsyncClient | None = None) -> None:
+        if not api_key or len(api_key) > 4096:
+            raise TargetConfigurationError("A valid provider API key is required.")
+        if not model or len(model) > 200:
+            raise TargetConfigurationError("A valid model identifier is required.")
+        self.base_url = validate_provider_base_url(base_url)
+        self.api_key = api_key
+        self.model = model
+        self.timeout_seconds = timeout_seconds
+        self.client = client
+
+    async def ainvoke(self, input_data: Any) -> str:
+        prompt = input_data if isinstance(input_data, str) else str(input_data)
+        payload = {"model": self.model, "messages": [{"role": "user", "content": prompt}], "temperature": 0}
+        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        try:
+            if self.client:
+                response = await self.client.post(self.base_url + "/chat/completions", json=payload, headers=headers,
+                                                  timeout=self.timeout_seconds, follow_redirects=False)
+                response.raise_for_status()
+                data = response.json()
+            else:
+                async with httpx.AsyncClient(timeout=self.timeout_seconds, follow_redirects=False) as client:
+                    response = await client.post(self.base_url + "/chat/completions", json=payload, headers=headers)
+                    response.raise_for_status()
+                    data = response.json()
+            content = data["choices"][0]["message"]["content"]
+            if not isinstance(content, str):
+                raise ValueError("Provider response content was not text.")
+            return content.strip()
+        except httpx.TimeoutException as exc:
+            raise RuntimeError("Provider request timed out.") from exc
+        except httpx.HTTPStatusError as exc:
+            raise RuntimeError(f"Provider returned HTTP {exc.response.status_code}.") from exc
+        except httpx.HTTPError as exc:
+            raise RuntimeError("Provider request failed.") from exc
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise RuntimeError("Provider returned an invalid chat-completions response.") from exc
+
+
+PROVIDER_PRESETS = {
+    "openai": "https://api.openai.com/v1",
+    "gemini": "https://generativelanguage.googleapis.com/v1beta/openai",
+    "openrouter": "https://openrouter.ai/api/v1",
+}
