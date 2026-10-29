@@ -2,6 +2,7 @@ import asyncio
 
 from fastapi.testclient import TestClient
 
+import app.main as main_module
 from app.main import app
 
 
@@ -84,3 +85,22 @@ def test_connected_endpoint_requires_base_url_for_custom_compatible_provider():
         })
     assert response.status_code == 422
     assert "openai_compatible targets require base_url" in response.text
+
+
+
+def test_production_connected_evaluation_requires_operator_egress_proxy(monkeypatch):
+    monkeypatch.setattr(main_module, "COGNIS_ENV", "production")
+    monkeypatch.delenv("COGNIS_EGRESS_PROXY_URL", raising=False)
+    monkeypatch.setenv("COGNIS_API_KEYS_JSON", '{"test-token-for-egress-policy": "tenant-a"}')
+    with TestClient(app) as client:
+        response = client.post(
+            "/evaluations/connected",
+            headers={"Authorization": "Bearer test-token-for-egress-policy"},
+            json={
+                "target_type": "http_agent",
+                "endpoint_url": "https://agent.example.test/run",
+                "suite": "security",
+            },
+        )
+    assert response.status_code == 503
+    assert "COGNIS_EGRESS_PROXY_URL" in response.text
