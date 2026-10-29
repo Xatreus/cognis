@@ -52,15 +52,21 @@ async def run_evaluation_async(
             duration_ms = timeout_seconds * 1000 if isinstance(exc, AgentExecutionError) and "timeout" in str(exc).lower() else 0.0
             error = str(exc)
 
-        checks = evaluate_assertions(
-            actual,
-            expected=case.expected_output,
-            contains=case.contains,
-            not_contains=case.not_contains,
-            latency_ms=duration_ms,
-            max_latency_ms=case.max_latency_ms,
-        )
-        passed = bool(checks) and all(item.passed for item in checks)
+        # Execution failures must never become PASS just because generic output
+        # safety assertions pass (or because a case expects the literal "error").
+        if error is not None:
+            checks = []
+            passed = False
+        else:
+            checks = evaluate_assertions(
+                actual,
+                expected=case.expected_output,
+                contains=case.contains,
+                not_contains=case.not_contains,
+                latency_ms=duration_ms,
+                max_latency_ms=case.max_latency_ms,
+            )
+            passed = bool(checks) and all(item.passed for item in checks)
         results.append(CaseResult(
             case_id=case.case_id,
             passed=passed,
