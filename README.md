@@ -27,10 +27,10 @@ The command prints a report and writes:
 - `reports/demo-report.md` — human-readable summary, latency metrics, per-case outcomes, and failure details.
 - `reports/demo-report.json` — complete machine-readable evaluation result, including assertions and case metadata.
 
-Exit code is `0` when every case passes and `1` when the evaluation fails. To choose another output path:
+Exit code is `0` when every case passes and `1` when the evaluation fails. To choose another output directory:
 
 ```powershell
-python -m examples.run_demo --output reports/my-report.md --json-output reports/my-report.json
+python -m scripts.run_demo --output-dir reports/my-run
 ```
 
 ### What the six cases check
@@ -170,6 +170,35 @@ Cognis provides useful **regression signals**, not proof of correctness or secur
 
 This is an actively developed portfolio project focused on agent evaluation, reproducible testing, observability, worker isolation, and tenant-aware persistence. See the code, tests, CI results, and generated report to verify the implemented behavior rather than relying on claims in this document.
 
+
+## Try the connected-agent workflow with a local HTTP fixture
+
+Before connecting a real agent, you can verify the entire HTTP integration without a model API key or paid inference. This starts a second local service that implements Cognis's documented JSON contract.
+
+**Terminal 1 — start Cognis API** (Windows PowerShell):
+
+```powershell
+$env:COGNIS_ALLOW_PRIVATE_AGENT_URLS = "true"
+python -m uvicorn app.main:app --reload --port 8000
+```
+
+**Terminal 2 — start the sample HTTP agent**:
+
+```powershell
+python -m uvicorn examples.sample_http_agent:app --reload --port 8001
+```
+
+Open `http://127.0.0.1:8000/dashboard`, choose **Connect target**, then select:
+
+- Target type: **Existing HTTP agent**
+- Endpoint URL: `http://127.0.0.1:8001/run`
+- Input/output contract: **input → output**
+- Test suite: **Quality + security baseline**
+- **Allow local/private endpoint**: enabled
+
+Run the tests. The deterministic fixture is designed to pass the four built-in quality cases and the three response-level security probes (7/7). The integration test in `tests/test_sample_http_agent.py` exercises the same adapter contract in CI.
+
+The private URL setting is deliberately for local development only. Do not enable `COGNIS_ALLOW_PRIVATE_AGENT_URLS` on a publicly accessible deployment. This sample is a protocol fixture, not an LLM and not proof that real agents are secure.
 
 ## Connect your own model or agent (BYOK)
 
