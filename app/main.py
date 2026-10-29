@@ -39,12 +39,12 @@ MAX_TIMEOUT_SECONDS = float(os.getenv("COGNIS_MAX_TIMEOUT_SECONDS", "60"))
 API_KEY = os.getenv("COGNIS_API_KEY", "").strip()
 COGNIS_ENV = os.getenv("COGNIS_ENV", "development").strip().lower()
 
-# Fail closed in production rather than silently running protected endpoints
-# without authentication when a deployment secret was omitted.
-if COGNIS_ENV == "production" and len(API_KEY) < 32 and not os.getenv("COGNIS_API_KEYS_JSON", "").strip():
-    raise RuntimeError(
-        "Production requires COGNIS_API_KEY with at least 32 characters."
-    )
+from app.security.auth_config import validate_production_auth_config
+
+try:
+    validate_production_auth_config(os.environ)
+except ValueError as exc:
+    raise RuntimeError(f"Invalid production authentication configuration: {exc}") from exc
 
 
 @asynccontextmanager
