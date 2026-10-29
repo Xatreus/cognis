@@ -22,6 +22,10 @@ class CaseResult(BaseModel):
     error: str | None = None
     assertions: list[AssertionResultSchema] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
+    # Optional instrumentation supplied by framework-specific agent adapters.
+    # Trace data is sanitized before reaching this response model.
+    tool_calls: list[dict[str, Any]] = Field(default_factory=list)
+    trace: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvaluationMetrics(BaseModel):
