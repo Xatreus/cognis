@@ -47,7 +47,7 @@ async def run_evaluation_async(
         try:
             raw, duration_ms = await run_agent(agent, case.input, timeout_seconds=timeout_seconds)
             actual = normalize_output(raw)
-        except (AgentExecutionError, ValueError) as exc:
+        except AgentExecutionError as exc:
             actual = "error"
             duration_ms = timeout_seconds * 1000 if isinstance(exc, AgentExecutionError) and "timeout" in str(exc).lower() else 0.0
             error = str(exc)
