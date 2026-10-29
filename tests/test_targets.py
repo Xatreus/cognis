@@ -56,3 +56,19 @@ def test_http_agent_contract_and_auth_header():
         assert seen["authorization"] == "Bearer agent-secret"
         assert b"agent-secret" not in seen["payload"]
     asyncio.run(scenario())
+
+def test_invoice_buddy_contract_maps_question_to_answer():
+    async def scenario():
+        async def handler(request):
+            import json
+            payload = json.loads((await request.aread()).decode())
+            assert payload == {"question": "What is the total spend?"}
+            return httpx.Response(200, json={"answer": "Total spend is 125.00."})
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            target = HTTPAgentTarget(
+                endpoint_url="https://localhost/ask", allow_private=True,
+                input_field="question", output_field="answer",
+                auth_header="x-api-key", auth_token="local-test-key", client=client,
+            )
+            assert await target.ainvoke("What is the total spend?") == "Total spend is 125.00."
+    asyncio.run(scenario())

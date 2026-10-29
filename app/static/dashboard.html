@@ -40,8 +40,11 @@
     </div>
     <div id="agent-fields" hidden>
       <label for="agent-url">Agent endpoint URL</label><input id="agent-url" placeholder="https://your-agent.example/run" autocomplete="url">
-      <label for="agent-token">Agent bearer token (optional)</label><input id="agent-token" type="password" autocomplete="off" placeholder="Agent auth token">
-      <p class="small-note">Contract: POST JSON {"input":"...","metadata":{...}} and return {"output":"..."} or {"response":"..."}.</p>
+      <label for="agent-token">Agent auth token (optional)</label><input id="agent-token" type="password" autocomplete="off" placeholder="Agent auth token">
+      <label for="agent-contract">Agent contract</label><select id="agent-contract"><option value="generic">Generic Cognis contract (input → output)</option><option value="invoice-buddy">Invoice Buddy API (question → answer)</option></select>
+      <label for="agent-auth-style">Authentication header</label><select id="agent-auth-style"><option value="authorization">Authorization: Bearer token</option><option value="x-api-key">X-API-Key</option></select>
+      <label class="check-row"><input id="allow-private-agent" type="checkbox"> Allow local/private endpoint (local development only)</label>
+      <p class="small-note">Invoice Buddy contract uses POST /ask with {"question":"..."} and returns {"answer":"..."}.</p>
     </div>
     <label for="target-suite">Test suite</label><select id="target-suite"><option value="both">Quality + security baseline</option><option value="security">Security baseline only</option><option value="quality">Custom quality cases</option></select>
     <div id="quality-fields" hidden><label for="quality-input">Test input</label><textarea id="quality-input" rows="3" placeholder="Input to send to the target"></textarea><label for="quality-expected">Expected output (optional)</label><input id="quality-expected" placeholder="Exact expected output" autocomplete="off"><label for="quality-contains">Must contain (optional)</label><input id="quality-contains" placeholder="Required phrase" autocomplete="off"></div>
