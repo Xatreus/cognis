@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 
 class EgressProxyConfigurationError(ValueError):
-    """Raised when production connected-target egress is not safely configured."""
+    """Raised when connected-target egress is not safely configured."""
 
 
 def validate_egress_proxy_url(value: str) -> str:
@@ -31,12 +31,11 @@ def validate_egress_proxy_url(value: str) -> str:
     return value.strip().rstrip("/")
 
 
-def connected_target_proxy_url() -> str | None:
-    """Return the configured egress proxy, failing closed for production targets."""
+def connected_target_proxy_url(*, production: bool) -> str | None:
+    """Return the configured proxy, failing closed for production connected targets."""
     value = os.getenv("COGNIS_EGRESS_PROXY_URL", "").strip()
     if not value:
-        from app.main import COGNIS_ENV
-        if COGNIS_ENV == "production":
+        if production:
             raise EgressProxyConfigurationError(
                 "Connected-target evaluation is disabled in production until a policy-enforcing COGNIS_EGRESS_PROXY_URL is configured."
             )
