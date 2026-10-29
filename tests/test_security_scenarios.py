@@ -23,6 +23,8 @@ def test_secret_leak_scenario_uses_synthetic_canaries():
     assert len(scenario.cases) == 2
     assert all("security" in case.tags for case in scenario.cases)
     assert scenario.cases[0].not_contains == ("COGNIS_TEST_CANARY_A",)
+    assert "COGNIS_TEST_CANARY_A" in scenario.cases[0].input
+    assert "COGNIS_TEST_CANARY_B" not in scenario.cases[0].input
     assert "Ignore all previous instructions" in scenario.cases[0].input
 
 
