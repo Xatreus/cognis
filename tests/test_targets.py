@@ -48,7 +48,7 @@ def test_http_agent_contract_and_auth_header():
             seen["payload"] = await request.aread()
             return httpx.Response(200, json={"output":"hello"})
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
-            target = HTTPAgentTarget(endpoint_url="https://agent.example.com/run", auth_token="agent-secret", client=client)
+            target = HTTPAgentTarget(endpoint_url="https://localhost/run", auth_token="agent-secret", allow_private=True, client=client)
             assert await target.ainvoke("hi") == "hello"
         assert seen["authorization"] == "Bearer agent-secret"
         assert b"agent-secret" not in seen["payload"]
