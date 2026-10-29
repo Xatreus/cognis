@@ -49,17 +49,32 @@ class HTTPAgentTarget:
     """POSTs {input, metadata} and reads a string output from JSON response."""
     def __init__(self, *, endpoint_url: str, auth_token: str | None = None,
                  timeout_seconds: float = 15.0, allow_private: bool = False,
+                 input_field: str = "input", output_field: str = "output",
+                 auth_header: str = "authorization",
                  client: httpx.AsyncClient | None = None) -> None:
+        if input_field not in {"input", "question"}:
+            raise AgentEndpointError("input_field must be 'input' or 'question'.")
+        if output_field not in {"output", "response", "answer"}:
+            raise AgentEndpointError("output_field must be 'output', 'response', or 'answer'.")
+        if auth_header not in {"authorization", "x-api-key"}:
+            raise AgentEndpointError("auth_header must be 'authorization' or 'x-api-key'.")
         self.endpoint_url = validate_agent_url(endpoint_url, allow_private=allow_private)
         self.auth_token = auth_token
         self.timeout_seconds = timeout_seconds
+        self.input_field = input_field
+        self.output_field = output_field
+        self.auth_header = auth_header
         self.client = client
 
     async def ainvoke(self, input_data: Any) -> str:
         headers = {"Content-Type": "application/json"}
         if self.auth_token:
-            headers["Authorization"] = f"Bearer {self.auth_token}"
-        payload = {"input": input_data, "metadata": {"source": "cognis"}}
+            headers["X-API-Key" if self.auth_header == "x-api-key" else "Authorization"] = (
+                self.auth_token if self.auth_header == "x-api-key" else f"Bearer {self.auth_token}"
+            )
+        payload = {self.input_field: input_data}
+        if self.input_field == "input":
+            payload["metadata"] = {"source": "cognis"}
         try:
             if self.client:
                 response = await self.client.post(self.endpoint_url, json=payload, headers=headers,
@@ -71,7 +86,7 @@ class HTTPAgentTarget:
                     response = await client.post(self.endpoint_url, json=payload, headers=headers)
                     response.raise_for_status()
                     data = response.json()
-            output = data.get("output", data.get("response")) if isinstance(data, dict) else None
+            output = data.get(self.output_field) if isinstance(data, dict) else None
             if not isinstance(output, str):
                 raise RuntimeError("Agent response must be JSON with a string 'output' or 'response' field.")
             return output
